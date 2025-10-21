@@ -1,0 +1,232 @@
+# Digitakt MIDI MCP Server
+
+An MCP (Model Context Protocol) server for controlling the Elektron Digitakt II via MIDI.
+
+## Features
+
+- **Send MIDI Notes**: Trigger drum sounds on specific tracks
+- **Control Parameters**: Adjust filters, envelopes, and other parameters via CC messages
+- **Program Changes**: Switch between patterns
+- **Note Sequences**: Send rhythmic patterns programmatically
+
+## Installation
+
+1. Create and activate a virtual environment:
+```bash
+python3 -m venv venv
+source venv/bin/activate
+```
+
+2. Install dependencies:
+```bash
+pip install -r requirements.txt
+```
+
+3. Make sure your Digitakt II is connected via USB with Overbridge
+
+## Usage
+
+### Running the Server Manually
+
+```bash
+source venv/bin/activate
+python server.py
+```
+
+### Configuring with Claude Desktop
+
+Add this to your Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "digitakt-midi": {
+      "command": "/Users/feamster/src/digitakt-midi-mcp/venv/bin/python",
+      "args": ["/Users/feamster/src/digitakt-midi-mcp/server.py"]
+    }
+  }
+}
+```
+
+Then restart Claude Desktop.
+
+## Available Tools
+
+### send_note
+Send a MIDI note to trigger drums on the Digitakt.
+
+**Parameters:**
+- `note` (required): MIDI note number (0-127). For Digitakt: 60=C3 (Track 1), 61=C#3 (Track 2), etc.
+- `velocity` (optional): Note velocity (1-127), default 100
+- `duration` (optional): How long to hold the note in seconds, default 0.1
+- `channel` (optional): MIDI channel (1-16), default 1
+
+**Example:**
+```
+Play kick drum on track 1
+```
+
+### send_cc
+Send a Control Change message to adjust Digitakt parameters.
+
+**Parameters:**
+- `cc_number` (required): CC number (0-127)
+- `value` (required): CC value (0-127)
+- `channel` (optional): MIDI channel (1-16), default 1
+
+**Common CC Numbers for Digitakt:**
+- 74: Filter Frequency
+- 71: Filter Resonance
+- 73: Attack
+- 75: Decay
+- 16-23: Track levels (16=Track 1, 17=Track 2, etc.)
+
+**Example:**
+```
+Set filter frequency to maximum on track 1
+```
+
+### send_program_change
+Switch to a different pattern on the Digitakt.
+
+**Parameters:**
+- `program` (required): Pattern number (0-127)
+- `channel` (optional): MIDI channel (1-16), default 1
+
+**Example:**
+```
+Switch to pattern 5
+```
+
+### send_note_sequence
+Send a sequence of notes with timing.
+
+**Parameters:**
+- `notes` (required): Array of [note, velocity, duration] triplets
+- `delay` (optional): Time between notes in seconds, default 0.25
+- `channel` (optional): MIDI channel (1-16), default 1
+
+**Example:**
+```
+Play a simple 4-on-the-floor kick pattern
+```
+
+### send_sysex
+Send a System Exclusive (SysEx) message to the Digitakt for advanced control and pattern programming.
+
+**Parameters:**
+- `data` (optional): Array of bytes (0-127) to send as SysEx data. F0 and F7 bytes are added automatically.
+- `hex_string` (optional): Alternative to `data` - provide SysEx as hex string (e.g., "00203C...")
+
+**Elektron Manufacturer ID:** `0x00 0x20 0x3C`
+
+**Example:**
+```
+Send a custom SysEx message to the Digitakt
+```
+
+**Note:** The exact SysEx format for Digitakt pattern programming is not publicly documented by Elektron. You can:
+- Use this tool to send raw SysEx data you've captured or reverse-engineered
+- Capture SysEx dumps from Elektron Transfer software
+- Experiment with the format by analyzing saved .syx files
+
+### request_sysex_dump
+Request a SysEx data dump from the Digitakt (pattern, sound, kit, or project).
+
+**Parameters:**
+- `dump_type` (required): Type of dump - "pattern", "sound", "kit", or "project"
+- `bank` (optional): Bank number (0-15)
+- `pattern_number` (optional): Pattern number within bank (0-15)
+
+**Example:**
+```
+Request a pattern dump from bank 0, pattern 0
+```
+
+**Important:** This sends a best-guess dump request format. The exact protocol is not publicly documented. You may need to:
+- Monitor SysEx responses using MIDI monitoring software
+- Use Elektron Transfer for official dumps
+- Adjust the command bytes based on experimentation
+
+## Resources
+
+### midi://ports
+Lists all available MIDI input and output ports on the system.
+
+### midi://digitakt/status
+Shows the current connection status to the Digitakt MIDI ports.
+
+## Digitakt MIDI Reference
+
+### Note Numbers for Tracks
+- Track 1: C3 (60)
+- Track 2: C#3 (61)
+- Track 3: D3 (62)
+- Track 4: D#3 (63)
+- Track 5: E3 (64)
+- Track 6: F3 (65)
+- Track 7: F#3 (66)
+- Track 8: G3 (67)
+
+### Common CC Parameters
+Check the Digitakt manual for the full CC map. Some common ones:
+- 16-23: Track levels
+- 71: Filter Resonance
+- 74: Filter Frequency
+- 73: Attack
+- 75: Decay
+
+## Troubleshooting
+
+**MIDI device not found:**
+- Make sure the Digitakt is connected via USB
+- Check that Overbridge is properly installed
+- Verify the device shows up in Audio MIDI Setup (macOS)
+
+**Permission errors:**
+- On macOS, you may need to grant microphone permissions to Terminal/iTerm
+- Check System Preferences > Security & Privacy > Privacy > Microphone
+
+## Working with SysEx
+
+The Digitakt supports SysEx for advanced operations, but Elektron hasn't published the detailed protocol specification. Here are some approaches to work with SysEx:
+
+### Capturing SysEx Data
+
+1. **Using Elektron Transfer:**
+   - Use Elektron Transfer to save patterns/sounds as .syx files
+   - Analyze these files to understand the format
+   - Use `send_sysex` with the captured data
+
+2. **MIDI Monitoring:**
+   - Use tools like MIDI Monitor (macOS) or MIDI-OX (Windows)
+   - Capture SysEx dumps from the device
+   - Analyze the byte structure
+
+3. **Reverse Engineering:**
+   - Study community projects like the Analog Rytm SysEx library
+   - Experiment with sending modified SysEx data
+   - Document your findings
+
+### SysEx Structure
+
+All Elektron SysEx messages follow this basic structure:
+```
+F0                    - SysEx start byte
+00 20 3C              - Elektron manufacturer ID
+[device_id]           - Device identifier
+[command]             - Command byte
+[data...]             - Message-specific data
+F7                    - SysEx end byte
+```
+
+### Tips for Pattern Programming
+
+- Start by capturing existing patterns via Transfer
+- Compare multiple patterns to identify fields
+- Test modifications carefully to avoid corrupting device memory
+- Always backup your projects before experimenting
+
+## License
+
+MIT
