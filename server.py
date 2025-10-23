@@ -436,7 +436,7 @@ async def list_tools() -> list[Tool]:
                     "send_stop": {
                         "type": "boolean",
                         "description": "Send MIDI Stop after duration. Default is true.",
-                        "default": true
+                        "default": True
                     }
                 }
             }
