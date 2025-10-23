@@ -94,12 +94,35 @@ Send a Control Change message to adjust Digitakt parameters.
 - `value` (required): CC value (0-127)
 - `channel` (optional): MIDI channel (1-16), default 1
 
-**Common CC Numbers for Digitakt:**
-- 74: Filter Frequency
-- 71: Filter Resonance
-- 73: Attack
-- 75: Decay
-- 16-23: Track levels (16=Track 1, 17=Track 2, etc.)
+**Common CC Numbers for Digitakt II:**
+- **Track:**
+  - 94: Mute
+  - 95: Track Level
+- **Source:**
+  - 16: Tune
+  - 23: Sample Level
+- **Filter Envelope:**
+  - 70: Attack Time
+  - 71: Decay Time
+  - 72: Sustain Level
+  - 73: Release Time
+  - 74: Filter Frequency
+  - 77: Envelope Depth
+- **AMP Envelope:**
+  - 79: Attack Time
+  - 80: Hold Time
+  - 81: Decay Time
+  - 82: Sustain Level
+  - 83: Release Time
+  - 89: Volume
+  - 90: Pan
+- **FX:**
+  - 84: Delay Send
+  - 85: Reverb Send
+  - 12: Chorus Send
+  - 57: Overdrive
+
+**Note:** Filter and AMP have separate envelopes with different CC numbers. Some parameters like LFO Speed and Depth are high-resolution and use both CC MSB and LSB.
 
 **Example:**
 ```
@@ -403,12 +426,40 @@ Shows the current connection status to the Digitakt MIDI ports.
 **Note:** MIDI channels 1-16 can be assigned to tracks 1-16, or use AUTO CHANNEL to control the currently active track.
 
 ### Common CC Parameters
-Check the Digitakt manual for the full CC map. Some common ones:
-- 16-23: Track levels
-- 71: Filter Resonance
+Check the Digitakt II manual (OS 1.03) Appendix B for the full CC map. Key parameters:
+
+**Track:**
+- 94: Mute
+- 95: Track Level
+
+**Source:**
+- 16: Tune
+- 23: Sample Level
+
+**Filter Envelope (separate from AMP):**
+- 70: Attack Time
+- 71: Decay Time
+- 72: Sustain Level
+- 73: Release Time
 - 74: Filter Frequency
-- 73: Attack
-- 75: Decay
+- 77: Envelope Depth
+
+**AMP Envelope:**
+- 79: Attack Time
+- 80: Hold Time (unique to AMP)
+- 81: Decay Time
+- 82: Sustain Level
+- 83: Release Time
+- 89: Volume
+- 90: Pan
+
+**FX Sends:**
+- 84: Delay Send
+- 85: Reverb Send
+- 12: Chorus Send
+- 57: Overdrive
+
+**IMPORTANT:** The Filter and AMP have separate envelopes with different CC numbers. CC 70-73 control the Filter envelope, while CC 79-83 control the AMP envelope.
 
 ### NRPN Parameters
 
@@ -431,24 +482,23 @@ NRPNs (Non-Registered Parameter Numbers) provide access to more parameters than 
 - LSB 2: Trig Length (note length per step)
 
 **Filter Parameters (MSB=1):**
-- LSB 16: Attack
-- LSB 17: Decay
-- LSB 18: Sustain
-- LSB 19: Release
+- LSB 16: Attack Time
+- LSB 17: Decay Time
+- LSB 18: Sustain Level
+- LSB 19: Release Time
 - LSB 20: Frequency
-- LSB 21: Resonance
-- LSB 22: Type
 - LSB 23: Envelope Depth
 
-**Amp Parameters (MSB=1):**
-- LSB 24: Attack
-- LSB 25: Hold
-- LSB 26: Decay
-- LSB 27: Overdrive
-- LSB 28: Delay Send
-- LSB 29: Reverb Send
-- LSB 30: Pan
-- LSB 31: Volume
+**AMP Parameters (MSB=1):**
+- LSB 30: Attack Time
+- LSB 31: Hold Time
+- LSB 32: Decay Time
+- LSB 33: Sustain Level
+- LSB 34: Release Time
+- LSB 36: Delay Send
+- LSB 37: Reverb Send
+- LSB 38: Pan
+- LSB 39: Volume
 
 See `nrpn_constants.py` for the complete parameter list.
 
