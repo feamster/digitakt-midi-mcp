@@ -310,6 +310,25 @@ bars: 8
 
 **Use case:** Create repeating rhythmic or melodic patterns that play continuously while your Digitakt pattern runs. Perfect for hi-hats, percussion loops, or ostinato basslines.
 
+### save_last_melody
+Save the last played melody from `play_pattern_with_melody` to a standard MIDI file. Perfect for capturing generated melodies you like.
+
+**Parameters:**
+- `filename` (required): Filename for the MIDI file (e.g., 'my_melody.mid'). Will be saved in the current directory.
+
+**Examples:**
+```
+Save the last melody to a file
+filename: "cool_melody.mid"
+
+Save with a descriptive name
+filename: "bassline_120bpm.mid"
+```
+
+**Use case:** After using `play_pattern_with_melody` to generate or play a melody, you can save it to a MIDI file for use in your DAW, other hardware, or for archival. The MIDI file includes the original tempo and timing.
+
+**Note:** This only works after you've used `play_pattern_with_melody` at least once. The melody is saved with the exact BPM, notes, velocities, and durations from the last playback.
+
 ### send_sysex
 Send a System Exclusive (SysEx) message to the Digitakt for advanced control and pattern programming.
 

@@ -31,6 +31,11 @@ server = Server("digitakt-midi-server")
 output_port: Optional[mido.ports.BaseOutput] = None
 input_port: Optional[mido.ports.BaseInput] = None
 
+# Global history for last played melody/pattern
+last_melody = None  # Stores: {"bpm": int, "notes": [...], "channel": int}
+last_tracks = None  # Stores: {"bpm": int, "triggers": [...]}
+last_loop = None    # Stores: {"bpm": int, "loop_notes": [...], "loop_length": float, "channel": int}
+
 def connect_midi():
     """Connect to Digitakt MIDI ports"""
     global output_port, input_port
@@ -571,6 +576,20 @@ async def list_tools() -> list[Tool]:
                 },
                 "required": ["loop_notes"]
             }
+        ),
+        Tool(
+            name="save_last_melody",
+            description="Save the last played melody from play_pattern_with_melody to a MIDI file. The melody is saved with the original tempo and timing.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "filename": {
+                        "type": "string",
+                        "description": "Filename for the MIDI file (e.g., 'my_melody.mid'). Will be saved in the current directory."
+                    }
+                },
+                "required": ["filename"]
+            }
         )
     ]
 
@@ -982,11 +1001,19 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             )]
 
         elif name == "play_pattern_with_melody":
+            global last_melody
             bars = arguments.get("bars", 4)
             bpm = arguments.get("bpm", 120)
             notes = arguments["notes"]
             channel = arguments.get("channel", 1) - 1
             send_stop = arguments.get("send_stop", True)
+
+            # Save to history for later export
+            last_melody = {
+                "bpm": bpm,
+                "notes": notes,
+                "channel": channel + 1  # Store as 1-based
+            }
 
             # Calculate timing
             clock_interval = 60.0 / (bpm * 24)
@@ -1107,6 +1134,76 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 type="text",
                 text=f"Played {bars} bars at {bpm} BPM with {len(loop_notes)} notes looping every {loop_length} bar(s) ({num_loops:.1f} loops) {status}"
             )]
+
+        elif name == "save_last_melody":
+            filename = arguments["filename"]
+
+            if not last_melody:
+                return [TextContent(
+                    type="text",
+                    text="Error: No melody to save. Use play_pattern_with_melody first."
+                )]
+
+            # Create a MIDI file
+            mid = mido.MidiFile(ticks_per_beat=480)
+            track = mido.MidiTrack()
+            mid.tracks.append(track)
+
+            # Set tempo
+            bpm = last_melody["bpm"]
+            tempo = mido.bpm2tempo(bpm)
+            track.append(mido.MetaMessage('set_tempo', tempo=tempo, time=0))
+
+            # Add notes
+            notes = last_melody["notes"]
+            channel = last_melody["channel"] - 1  # Convert back to 0-based
+
+            # Convert notes to MIDI messages with delta times
+            # Notes format: [beat, note, velocity, duration]
+            events = []
+            for note_data in notes:
+                beat = note_data[0]
+                note = note_data[1]
+                velocity = note_data[2] if len(note_data) > 2 else 100
+                duration = note_data[3] if len(note_data) > 3 else 0.1
+
+                # Convert beat to ticks (480 ticks per quarter note)
+                tick_start = int(beat * 480)
+                tick_duration = int((duration / (60.0 / bpm)) * 480)  # Convert seconds to ticks
+
+                events.append(("on", tick_start, note, velocity, channel))
+                events.append(("off", tick_start + tick_duration, note, 0, channel))
+
+            # Sort events by time
+            events.sort(key=lambda x: x[1])
+
+            # Convert absolute times to delta times
+            current_time = 0
+            for event_type, tick_time, note, velocity, ch in events:
+                delta_time = tick_time - current_time
+
+                if event_type == "on":
+                    track.append(mido.Message('note_on', note=note, velocity=velocity, channel=ch, time=delta_time))
+                else:
+                    track.append(mido.Message('note_off', note=note, velocity=velocity, channel=ch, time=delta_time))
+
+                current_time = tick_time
+
+            # Add end of track
+            track.append(mido.MetaMessage('end_of_track', time=0))
+
+            # Save to file
+            try:
+                mid.save(filename)
+                return [TextContent(
+                    type="text",
+                    text=f"Saved melody to {filename} ({len(notes)} notes at {bpm} BPM)"
+                )]
+            except Exception as e:
+                return [TextContent(
+                    type="text",
+                    text=f"Error saving MIDI file: {str(e)}"
+                )]
 
         else:
             return [TextContent(
