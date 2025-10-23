@@ -440,8 +440,146 @@ async def list_tools() -> list[Tool]:
                     }
                 }
             }
+        ),
+        Tool(
+            name="play_pattern_with_tracks",
+            description="Start the Digitakt pattern and trigger specific tracks at specific times. Sends MIDI Start + Clock while also sending note triggers.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "bars": {
+                        "type": "number",
+                        "description": "Number of bars to play (in 4/4 time). Default is 4 bars.",
+                        "minimum": 0.25,
+                        "default": 4
+                    },
+                    "bpm": {
+                        "type": "number",
+                        "description": "Tempo in beats per minute. Default is 120 BPM.",
+                        "minimum": 20,
+                        "maximum": 300,
+                        "default": 120
+                    },
+                    "triggers": {
+                        "type": "array",
+                        "description": "Array of [beat, track, velocity] where beat is 0-based quarter note (0=start, 1=beat 2, etc), track is 1-16, velocity is 1-127.",
+                        "items": {
+                            "type": "array",
+                            "minItems": 2,
+                            "maxItems": 3
+                        }
+                    },
+                    "send_stop": {
+                        "type": "boolean",
+                        "description": "Send MIDI Stop after duration. Default is true.",
+                        "default": True
+                    }
+                },
+                "required": ["triggers"]
+            }
+        ),
+        Tool(
+            name="play_pattern_with_melody",
+            description="Start the Digitakt pattern and play a melodic sequence on the active track. Sends MIDI Start + Clock while also sending notes.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "bars": {
+                        "type": "number",
+                        "description": "Number of bars to play (in 4/4 time). Default is 4 bars.",
+                        "minimum": 0.25,
+                        "default": 4
+                    },
+                    "bpm": {
+                        "type": "number",
+                        "description": "Tempo in beats per minute. Default is 120 BPM.",
+                        "minimum": 20,
+                        "maximum": 300,
+                        "default": 120
+                    },
+                    "notes": {
+                        "type": "array",
+                        "description": "Array of [beat, note, velocity, duration] where beat is 0-based quarter note, note is MIDI note 12-127, velocity is 1-127, duration is in seconds.",
+                        "items": {
+                            "type": "array",
+                            "minItems": 2,
+                            "maxItems": 4
+                        }
+                    },
+                    "channel": {
+                        "type": "integer",
+                        "description": "MIDI channel (1-16). Default is 1 (auto channel).",
+                        "minimum": 1,
+                        "maximum": 16,
+                        "default": 1
+                    },
+                    "send_stop": {
+                        "type": "boolean",
+                        "description": "Send MIDI Stop after duration. Default is true.",
+                        "default": True
+                    }
+                },
+                "required": ["notes"]
+            }
+        ),
+        Tool(
+            name="play_pattern_with_loop",
+            description="Start the Digitakt pattern and continuously trigger notes on a loop. Sends MIDI Start + Clock while looping note triggers.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "bars": {
+                        "type": "number",
+                        "description": "Number of bars to play (in 4/4 time). Default is 4 bars.",
+                        "minimum": 0.25,
+                        "default": 4
+                    },
+                    "bpm": {
+                        "type": "number",
+                        "description": "Tempo in beats per minute. Default is 120 BPM.",
+                        "minimum": 20,
+                        "maximum": 300,
+                        "default": 120
+                    },
+                    "loop_notes": {
+                        "type": "array",
+                        "description": "Array of [beat_offset, note_or_track, velocity] where beat_offset is relative to loop start (0-3.99 for 1 bar loop), note/track can be 0-15 for tracks or 12+ for melody, velocity is 1-127.",
+                        "items": {
+                            "type": "array",
+                            "minItems": 2,
+                            "maxItems": 3
+                        }
+                    },
+                    "loop_length": {
+                        "type": "number",
+                        "description": "Length of the loop in bars (in 4/4 time). Default is 1 bar.",
+                        "minimum": 0.25,
+                        "default": 1
+                    },
+                    "channel": {
+                        "type": "integer",
+                        "description": "MIDI channel (1-16). Default is 1 (auto channel).",
+                        "minimum": 1,
+                        "maximum": 16,
+                        "default": 1
+                    },
+                    "send_stop": {
+                        "type": "boolean",
+                        "description": "Send MIDI Stop after duration. Default is true.",
+                        "default": True
+                    }
+                },
+                "required": ["loop_notes"]
+            }
         )
     ]
+
+# Helper function for delayed note off
+async def _delayed_note_off(note: int, duration: float, channel: int = 0):
+    """Send note off after a delay"""
+    await asyncio.sleep(duration)
+    if output_port:
+        output_port.send(mido.Message('note_off', note=note, velocity=0, channel=channel))
 
 @server.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[TextContent]:
@@ -754,10 +892,20 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             # Send Start message
             output_port.send(mido.Message('start'))
 
-            # Send clock pulses
+            # Use absolute timing to prevent drift
+            import time
+            start_time = time.time()
+
+            # Send clock pulses with precise timing
             for i in range(total_pulses):
                 output_port.send(mido.Message('clock'))
-                await asyncio.sleep(clock_interval)
+
+                # Calculate when next pulse should occur
+                next_pulse_time = start_time + (i + 1) * clock_interval
+                sleep_duration = next_pulse_time - time.time()
+
+                if sleep_duration > 0:
+                    await asyncio.sleep(sleep_duration)
 
             # Optionally send Stop
             if send_stop:
@@ -769,6 +917,195 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             return [TextContent(
                 type="text",
                 text=f"Played {bars} bars at {bpm} BPM {status}"
+            )]
+
+        elif name == "play_pattern_with_tracks":
+            bars = arguments.get("bars", 4)
+            bpm = arguments.get("bpm", 120)
+            triggers = arguments["triggers"]
+            send_stop = arguments.get("send_stop", True)
+
+            # Calculate timing
+            clock_interval = 60.0 / (bpm * 24)
+            total_pulses = int(bars * 96)
+            beat_duration = 60.0 / bpm  # Duration of one quarter note
+
+            # Prepare trigger schedule: convert beats to pulse indices
+            trigger_schedule = []
+            for trigger in triggers:
+                beat = trigger[0]
+                track = trigger[1]
+                velocity = trigger[2] if len(trigger) > 2 else 100
+                pulse_index = int(beat * 24)  # 24 pulses per quarter note
+                trigger_schedule.append((pulse_index, track, velocity))
+
+            # Sort by pulse index
+            trigger_schedule.sort(key=lambda x: x[0])
+
+            # Send Start message
+            output_port.send(mido.Message('start'))
+
+            import time
+            start_time = time.time()
+            trigger_idx = 0
+
+            # Send clock pulses and triggers
+            for i in range(total_pulses):
+                output_port.send(mido.Message('clock'))
+
+                # Check if we need to send any triggers at this pulse
+                while trigger_idx < len(trigger_schedule) and trigger_schedule[trigger_idx][0] == i:
+                    pulse, track, velocity = trigger_schedule[trigger_idx]
+                    note = track - 1  # Track 1-16 = note 0-15
+                    output_port.send(mido.Message('note_on', note=note, velocity=velocity, channel=0))
+                    # Schedule note off after short duration
+                    asyncio.create_task(_delayed_note_off(note, 0.05, 0))
+                    trigger_idx += 1
+
+                # Calculate when next pulse should occur
+                next_pulse_time = start_time + (i + 1) * clock_interval
+                sleep_duration = next_pulse_time - time.time()
+
+                if sleep_duration > 0:
+                    await asyncio.sleep(sleep_duration)
+
+            # Optionally send Stop
+            if send_stop:
+                output_port.send(mido.Message('stop'))
+                status = "and stopped"
+            else:
+                status = "(still running)"
+
+            return [TextContent(
+                type="text",
+                text=f"Played {bars} bars at {bpm} BPM with {len(triggers)} track triggers {status}"
+            )]
+
+        elif name == "play_pattern_with_melody":
+            bars = arguments.get("bars", 4)
+            bpm = arguments.get("bpm", 120)
+            notes = arguments["notes"]
+            channel = arguments.get("channel", 1) - 1
+            send_stop = arguments.get("send_stop", True)
+
+            # Calculate timing
+            clock_interval = 60.0 / (bpm * 24)
+            total_pulses = int(bars * 96)
+
+            # Prepare note schedule: convert beats to pulse indices
+            note_schedule = []
+            for note_data in notes:
+                beat = note_data[0]
+                note = note_data[1]
+                velocity = note_data[2] if len(note_data) > 2 else 100
+                duration = note_data[3] if len(note_data) > 3 else 0.1
+                pulse_index = int(beat * 24)
+                note_schedule.append((pulse_index, note, velocity, duration))
+
+            # Sort by pulse index
+            note_schedule.sort(key=lambda x: x[0])
+
+            # Send Start message
+            output_port.send(mido.Message('start'))
+
+            import time
+            start_time = time.time()
+            note_idx = 0
+
+            # Send clock pulses and notes
+            for i in range(total_pulses):
+                output_port.send(mido.Message('clock'))
+
+                # Check if we need to send any notes at this pulse
+                while note_idx < len(note_schedule) and note_schedule[note_idx][0] == i:
+                    pulse, note, velocity, duration = note_schedule[note_idx]
+                    output_port.send(mido.Message('note_on', note=note, velocity=velocity, channel=channel))
+                    # Schedule note off after duration
+                    asyncio.create_task(_delayed_note_off(note, duration, channel))
+                    note_idx += 1
+
+                # Calculate when next pulse should occur
+                next_pulse_time = start_time + (i + 1) * clock_interval
+                sleep_duration = next_pulse_time - time.time()
+
+                if sleep_duration > 0:
+                    await asyncio.sleep(sleep_duration)
+
+            # Optionally send Stop
+            if send_stop:
+                output_port.send(mido.Message('stop'))
+                status = "and stopped"
+            else:
+                status = "(still running)"
+
+            return [TextContent(
+                type="text",
+                text=f"Played {bars} bars at {bpm} BPM with {len(notes)} melody notes {status}"
+            )]
+
+        elif name == "play_pattern_with_loop":
+            bars = arguments.get("bars", 4)
+            bpm = arguments.get("bpm", 120)
+            loop_notes = arguments["loop_notes"]
+            loop_length = arguments.get("loop_length", 1)
+            channel = arguments.get("channel", 1) - 1
+            send_stop = arguments.get("send_stop", True)
+
+            # Calculate timing
+            clock_interval = 60.0 / (bpm * 24)
+            total_pulses = int(bars * 96)
+            loop_pulses = int(loop_length * 96)
+
+            # Prepare loop schedule
+            loop_schedule = []
+            for note_data in loop_notes:
+                beat_offset = note_data[0]
+                note = note_data[1]
+                velocity = note_data[2] if len(note_data) > 2 else 100
+                pulse_offset = int(beat_offset * 24)
+                loop_schedule.append((pulse_offset, note, velocity))
+
+            # Sort by pulse offset
+            loop_schedule.sort(key=lambda x: x[0])
+
+            # Send Start message
+            output_port.send(mido.Message('start'))
+
+            import time
+            start_time = time.time()
+
+            # Send clock pulses and looped notes
+            for i in range(total_pulses):
+                output_port.send(mido.Message('clock'))
+
+                # Calculate position within loop
+                loop_position = i % loop_pulses
+
+                # Check if we need to send any notes at this position in the loop
+                for pulse_offset, note, velocity in loop_schedule:
+                    if pulse_offset == loop_position:
+                        output_port.send(mido.Message('note_on', note=note, velocity=velocity, channel=channel))
+                        # Schedule note off after short duration
+                        asyncio.create_task(_delayed_note_off(note, 0.05, channel))
+
+                # Calculate when next pulse should occur
+                next_pulse_time = start_time + (i + 1) * clock_interval
+                sleep_duration = next_pulse_time - time.time()
+
+                if sleep_duration > 0:
+                    await asyncio.sleep(sleep_duration)
+
+            # Optionally send Stop
+            if send_stop:
+                output_port.send(mido.Message('stop'))
+                status = "and stopped"
+            else:
+                status = "(still running)"
+
+            num_loops = bars / loop_length
+            return [TextContent(
+                type="text",
+                text=f"Played {bars} bars at {bpm} BPM with {len(loop_notes)} notes looping every {loop_length} bar(s) ({num_loops:.1f} loops) {status}"
             )]
 
         else:

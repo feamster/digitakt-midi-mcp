@@ -240,6 +240,76 @@ Play for 2 bars and keep running (send_stop=false)
 
 **Use case:** This tool sends MIDI Start + Clock pulses + Stop, which the Digitakt needs to actually play when externally controlled. You can use this to play the Digitakt's sequencer while also sending notes or CC messages.
 
+### play_pattern_with_tracks
+Start the Digitakt pattern and trigger specific tracks at specific times. Combines MIDI transport control with precise track triggering.
+
+**Parameters:**
+- `bars` (optional): Number of bars to play in 4/4 time. Default is 4 bars.
+- `bpm` (optional): Tempo in beats per minute. Default is 120 BPM.
+- `triggers` (required): Array of `[beat, track, velocity]` where beat is 0-based quarter note (0=start, 1=beat 2, etc), track is 1-16, velocity is 1-127.
+- `send_stop` (optional): Send MIDI Stop after duration. Default is true.
+
+**Examples:**
+```
+Play 4 bars with kick on every beat
+triggers: [[0, 1, 100], [1, 1, 100], [2, 1, 100], [3, 1, 100]]
+
+Play 2 bars with kick and snare pattern
+triggers: [[0, 1, 100], [1, 2, 80], [2, 1, 100], [3, 2, 80]]
+```
+
+**Use case:** Perfect for layering additional drum hits on top of your Digitakt's pattern. You can trigger specific tracks at precise times while the pattern plays.
+
+### play_pattern_with_melody
+Start the Digitakt pattern and play a melodic sequence on the active track. Combines MIDI transport control with melodic note sequences.
+
+**Parameters:**
+- `bars` (optional): Number of bars to play in 4/4 time. Default is 4 bars.
+- `bpm` (optional): Tempo in beats per minute. Default is 120 BPM.
+- `notes` (required): Array of `[beat, note, velocity, duration]` where beat is 0-based quarter note, note is MIDI note 12-127, velocity is 1-127, duration is in seconds.
+- `channel` (optional): MIDI channel (1-16). Default is 1 (auto channel).
+- `send_stop` (optional): Send MIDI Stop after duration. Default is true.
+
+**Examples:**
+```
+Play a C major scale over 2 bars
+notes: [[0, 60, 100, 0.2], [1, 62, 100, 0.2], [2, 64, 100, 0.2], [3, 65, 100, 0.2],
+        [4, 67, 100, 0.2], [5, 69, 100, 0.2], [6, 71, 100, 0.2], [7, 72, 100, 0.4]]
+
+Play a simple melody
+notes: [[0, 60, 100, 0.3], [1.5, 64, 100, 0.3], [3, 67, 100, 0.5]]
+```
+
+**Use case:** Add melodic elements or basslines on top of your Digitakt pattern. The active track will play chromatically while the pattern runs.
+
+### play_pattern_with_loop
+Start the Digitakt pattern and continuously trigger notes on a loop. Combines MIDI transport control with looping note patterns.
+
+**Parameters:**
+- `bars` (optional): Number of bars to play in 4/4 time. Default is 4 bars.
+- `bpm` (optional): Tempo in beats per minute. Default is 120 BPM.
+- `loop_notes` (required): Array of `[beat_offset, note_or_track, velocity]` where beat_offset is relative to loop start (0-3.99 for 1 bar loop), note/track can be 0-15 for tracks or 12+ for melody, velocity is 1-127.
+- `loop_length` (optional): Length of the loop in bars (in 4/4 time). Default is 1 bar.
+- `channel` (optional): MIDI channel (1-16). Default is 1 (auto channel).
+- `send_stop` (optional): Send MIDI Stop after duration. Default is true.
+
+**Examples:**
+```
+Play a 1-bar hi-hat pattern that loops for 4 bars
+loop_notes: [[0, 2, 80], [0.5, 2, 60], [1, 2, 80], [1.5, 2, 60],
+             [2, 2, 80], [2.5, 2, 60], [3, 2, 80], [3.5, 2, 60]]
+loop_length: 1
+bars: 4
+
+Play a 2-bar melodic ostinato
+loop_notes: [[0, 60, 100], [1, 64, 100], [2, 67, 100], [3, 64, 100],
+             [4, 60, 100], [5, 67, 100], [6, 64, 100], [7, 60, 100]]
+loop_length: 2
+bars: 8
+```
+
+**Use case:** Create repeating rhythmic or melodic patterns that play continuously while your Digitakt pattern runs. Perfect for hi-hats, percussion loops, or ostinato basslines.
+
 ### send_sysex
 Send a System Exclusive (SysEx) message to the Digitakt for advanced control and pattern programming.
 
