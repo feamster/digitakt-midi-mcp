@@ -578,6 +578,60 @@ async def list_tools() -> list[Tool]:
             }
         ),
         Tool(
+            name="play_pattern_with_tracks_and_melody",
+            description="Start the Digitakt pattern and play both track triggers and melody simultaneously. Combines MIDI transport control with both drum triggers and chromatic notes.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "bars": {
+                        "type": "number",
+                        "description": "Number of bars to play (in 4/4 time). Default is 4 bars.",
+                        "minimum": 0.25,
+                        "default": 4
+                    },
+                    "bpm": {
+                        "type": "number",
+                        "description": "Tempo in beats per minute. Default is 120 BPM.",
+                        "minimum": 20,
+                        "maximum": 300,
+                        "default": 120
+                    },
+                    "track_triggers": {
+                        "type": "array",
+                        "description": "Array of [beat, track, velocity] where beat is 0-based quarter note, track is 1-16, velocity is 1-127.",
+                        "items": {
+                            "type": "array",
+                            "minItems": 2,
+                            "maxItems": 3
+                        },
+                        "default": []
+                    },
+                    "melody_notes": {
+                        "type": "array",
+                        "description": "Array of [beat, note, velocity, duration] where beat is 0-based quarter note, note is MIDI note 12-127, velocity is 1-127, duration is in seconds.",
+                        "items": {
+                            "type": "array",
+                            "minItems": 2,
+                            "maxItems": 4
+                        },
+                        "default": []
+                    },
+                    "channel": {
+                        "type": "integer",
+                        "description": "MIDI channel for melody notes (1-16). Track triggers always use channel 1. Default is 1.",
+                        "minimum": 1,
+                        "maximum": 16,
+                        "default": 1
+                    },
+                    "send_stop": {
+                        "type": "boolean",
+                        "description": "Send MIDI Stop after duration. Default is true.",
+                        "default": True
+                    }
+                }
+            }
+        ),
+        Tool(
             name="save_last_melody",
             description="Save the last played melody from play_pattern_with_melody to a MIDI file. The melody is saved with the original tempo and timing.",
             inputSchema={
@@ -1133,6 +1187,82 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             return [TextContent(
                 type="text",
                 text=f"Played {bars} bars at {bpm} BPM with {len(loop_notes)} notes looping every {loop_length} bar(s) ({num_loops:.1f} loops) {status}"
+            )]
+
+        elif name == "play_pattern_with_tracks_and_melody":
+            bars = arguments.get("bars", 4)
+            bpm = arguments.get("bpm", 120)
+            track_triggers = arguments.get("track_triggers", [])
+            melody_notes = arguments.get("melody_notes", [])
+            channel = arguments.get("channel", 1) - 1
+            send_stop = arguments.get("send_stop", True)
+
+            # Calculate timing
+            clock_interval = 60.0 / (bpm * 24)
+            total_pulses = int(bars * 96)
+
+            # Prepare combined event schedule with all notes
+            event_schedule = []
+
+            # Add track triggers to schedule (convert track numbers to MIDI notes 0-15)
+            for trigger_data in track_triggers:
+                beat = trigger_data[0]
+                track = trigger_data[1]
+                velocity = trigger_data[2] if len(trigger_data) > 2 else 100
+                pulse_index = int(beat * 24)
+                note = track - 1  # Track 1-16 = note 0-15
+                # Track triggers use channel 0 and default 0.05s duration
+                event_schedule.append(("track", pulse_index, note, velocity, 0.05, 0))
+
+            # Add melody notes to schedule
+            for note_data in melody_notes:
+                beat = note_data[0]
+                note = note_data[1]
+                velocity = note_data[2] if len(note_data) > 2 else 100
+                duration = note_data[3] if len(note_data) > 3 else 0.1
+                pulse_index = int(beat * 24)
+                # Melody notes use specified channel
+                event_schedule.append(("melody", pulse_index, note, velocity, duration, channel))
+
+            # Sort all events by pulse index
+            event_schedule.sort(key=lambda x: x[1])
+
+            # Send Start message
+            output_port.send(mido.Message('start'))
+
+            import time
+            start_time = time.time()
+            event_idx = 0
+
+            # Send clock pulses and all scheduled events
+            for i in range(total_pulses):
+                output_port.send(mido.Message('clock'))
+
+                # Check if we need to send any events at this pulse
+                while event_idx < len(event_schedule) and event_schedule[event_idx][1] == i:
+                    event_type, pulse, note, velocity, duration, ch = event_schedule[event_idx]
+                    output_port.send(mido.Message('note_on', note=note, velocity=velocity, channel=ch))
+                    # Schedule note off after duration
+                    asyncio.create_task(_delayed_note_off(note, duration, ch))
+                    event_idx += 1
+
+                # Calculate when next pulse should occur
+                next_pulse_time = start_time + (i + 1) * clock_interval
+                sleep_duration = next_pulse_time - time.time()
+
+                if sleep_duration > 0:
+                    await asyncio.sleep(sleep_duration)
+
+            # Optionally send Stop
+            if send_stop:
+                output_port.send(mido.Message('stop'))
+                status = "and stopped"
+            else:
+                status = "(still running)"
+
+            return [TextContent(
+                type="text",
+                text=f"Played {bars} bars at {bpm} BPM with {len(track_triggers)} track triggers and {len(melody_notes)} melody notes {status}"
             )]
 
         elif name == "save_last_melody":

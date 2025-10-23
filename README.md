@@ -14,6 +14,7 @@ digitakt-midi-mcp/
 │   ├── test_transport.py
 │   ├── test_pattern_tools.py
 │   ├── test_save_melody.py
+│   ├── test_tracks_and_melody.py
 │   └── verify_cc_mappings.py
 └── analysis/              # Research and analysis tools
     └── analyze_sysex.py
@@ -350,6 +351,37 @@ bars: 8
 
 **Use case:** Create repeating rhythmic or melodic patterns that play continuously while your Digitakt pattern runs. Perfect for hi-hats, percussion loops, or ostinato basslines.
 
+### play_pattern_with_tracks_and_melody
+Start the Digitakt pattern and play both track triggers AND melody notes simultaneously. Combines all capabilities in a single MIDI clock session.
+
+**Parameters:**
+- `bars` (optional): Number of bars to play in 4/4 time. Default is 4 bars.
+- `bpm` (optional): Tempo in beats per minute. Default is 120 BPM.
+- `track_triggers` (optional): Array of `[beat, track, velocity]` where beat is 0-based quarter note, track is 1-16, velocity is 1-127. Default is empty array.
+- `melody_notes` (optional): Array of `[beat, note, velocity, duration]` where beat is 0-based quarter note, note is MIDI note 12-127, velocity is 1-127, duration is in seconds. Default is empty array.
+- `channel` (optional): MIDI channel for melody notes (1-16). Track triggers always use channel 1. Default is 1.
+- `send_stop` (optional): Send MIDI Stop after duration. Default is true.
+
+**Examples:**
+```
+1-bar count-in on track 15, then 4-bar melody:
+bars: 5
+track_triggers: [[0, 15, 100], [1, 15, 100], [2, 15, 100], [3, 15, 100]]
+melody_notes: [[4, 62, 85, 0.5], [5, 65, 80, 0.5], [6, 69, 85, 0.5], [7, 71, 80, 0.5], ...]
+
+Kick on beats 0, 4, 8, 12 with melody throughout:
+track_triggers: [[0, 1, 100], [4, 1, 100], [8, 1, 100], [12, 1, 100]]
+melody_notes: [[0, 60, 85, 0.3], [1, 64, 80, 0.3], [2, 67, 85, 0.3], ...]
+
+Both track triggers and melody overlapping:
+track_triggers: [[0, 3, 80], [1, 3, 60], [2, 3, 80], [3, 3, 60]]  # hi-hat pattern
+melody_notes: [[0, 48, 100, 0.5], [2, 52, 90, 0.5], [3.5, 55, 85, 0.3]]  # bassline
+```
+
+**Use case:** Perfect for recording sessions where you want a count-in on one track while recording melody on another. Also great for combining drum hits with melodic parts, or creating complex layered sequences with precise timing control.
+
+**Key feature:** Both track triggers and melody notes are scheduled in the same beat-based timeline, so they can overlap, interleave, and play simultaneously with perfect timing.
+
 ### save_last_melody
 Save the last played melody from `play_pattern_with_melody` to a standard MIDI file. Perfect for capturing generated melodies you like.
 
@@ -543,6 +575,9 @@ python tests/test_pattern_tools.py
 
 # Test melody export to MIDI file
 python tests/test_save_melody.py
+
+# Test combined track triggers and melody
+python tests/test_tracks_and_melody.py
 ```
 
 ### Analysis Tools
