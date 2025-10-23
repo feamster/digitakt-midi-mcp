@@ -3,6 +3,11 @@
 Verify MIDI CC mappings from nrpn_constants.py against the JSON specification
 """
 
+import sys
+import os
+# Add parent directory to path to import nrpn_constants
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from nrpn_constants import (
     TrackCC, SourceCC, FilterCC, AmpCC, FXCC,
     TrackParams, TrigParams, SourceParams, FilterParams, AmpParams,

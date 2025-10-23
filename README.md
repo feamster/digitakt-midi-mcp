@@ -2,6 +2,23 @@
 
 An MCP (Model Context Protocol) server for controlling the Elektron Digitakt II via MIDI.
 
+## Project Structure
+
+```
+digitakt-midi-mcp/
+├── server.py              # Main MCP server
+├── nrpn_constants.py      # MIDI CC and NRPN mappings
+├── tests/                 # Test scripts
+│   ├── test_midi.py
+│   ├── test_track_triggers.py
+│   ├── test_transport.py
+│   ├── test_pattern_tools.py
+│   ├── test_save_melody.py
+│   └── verify_cc_mappings.py
+└── analysis/              # Research and analysis tools
+    └── analyze_sysex.py
+```
+
 ## Features
 
 - **Send MIDI Notes**: Trigger drum sounds on specific tracks
@@ -501,6 +518,41 @@ NRPNs (Non-Registered Parameter Numbers) provide access to more parameters than 
 - LSB 39: Volume
 
 See `nrpn_constants.py` for the complete parameter list.
+
+## Testing and Development
+
+### Running Tests
+
+Test scripts are located in the `tests/` directory. All tests require the Digitakt II to be connected via USB.
+
+```bash
+# Verify MIDI CC and NRPN mappings
+python tests/verify_cc_mappings.py
+
+# Test basic MIDI connectivity
+python tests/test_midi.py
+
+# Test track triggering (notes 0-15 for tracks 1-16)
+python tests/test_track_triggers.py
+
+# Test transport control (Start/Stop/Continue)
+python tests/test_transport.py
+
+# Test pattern + MIDI combination tools
+python tests/test_pattern_tools.py
+
+# Test melody export to MIDI file
+python tests/test_save_melody.py
+```
+
+### Analysis Tools
+
+Analysis tools are located in the `analysis/` directory for research and reverse engineering.
+
+```bash
+# Analyze SysEx files from Elektron Transfer
+python analysis/analyze_sysex.py <file.syx>
+```
 
 ## Troubleshooting
 
