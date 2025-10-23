@@ -8,6 +8,8 @@ An MCP (Model Context Protocol) server for controlling the Elektron Digitakt II 
 - **Control Parameters**: Adjust filters, envelopes, and other parameters via CC messages
 - **Program Changes**: Switch between patterns
 - **Note Sequences**: Send rhythmic patterns programmatically
+- **NRPN Support**: Advanced parameter control including per-trig note, velocity, and length
+- **SysEx Support**: Send raw SysEx messages for advanced control and pattern programming
 
 ## Installation
 
@@ -111,6 +113,53 @@ Send a sequence of notes with timing.
 Play a simple 4-on-the-floor kick pattern
 ```
 
+### send_nrpn
+Send an NRPN (Non-Registered Parameter Number) message for advanced parameter control.
+
+**Parameters:**
+- `msb` (required): NRPN MSB (1=Track/Trig/Source/Filter/Amp, 2=FX, 3=Trig Note/Velocity/Length)
+- `lsb` (required): NRPN LSB (parameter number)
+- `value` (required): Parameter value (0-127)
+- `channel` (optional): MIDI channel (1-16), default 1
+
+**Example:**
+```
+Set filter frequency using NRPN
+```
+
+**Common NRPNs:**
+- MSB=3, LSB=0: Trig Note
+- MSB=3, LSB=1: Trig Velocity
+- MSB=3, LSB=2: Trig Length
+- MSB=1, LSB=20: Filter Frequency
+- MSB=1, LSB=21: Filter Resonance
+
+### set_trig_note
+Convenience tool to set the note for a trig (step).
+
+**Parameters:**
+- `note` (required): MIDI note number (0-127)
+- `channel` (optional): MIDI channel (1-16), default 1
+
+**Example:**
+```
+Set the current trig to C3 (note 60)
+```
+
+### set_trig_velocity
+Convenience tool to set the velocity for a trig (step).
+
+**Parameters:**
+- `velocity` (required): Velocity (0-127)
+- `channel` (optional): MIDI channel (1-16), default 1
+
+### set_trig_length
+Convenience tool to set the length for a trig (step).
+
+**Parameters:**
+- `length` (required): Note length (0-127)
+- `channel` (optional): MIDI channel (1-16), default 1
+
 ### send_sysex
 Send a System Exclusive (SysEx) message to the Digitakt for advanced control and pattern programming.
 
@@ -175,6 +224,48 @@ Check the Digitakt manual for the full CC map. Some common ones:
 - 74: Filter Frequency
 - 73: Attack
 - 75: Decay
+
+### NRPN Parameters
+
+NRPNs (Non-Registered Parameter Numbers) provide access to more parameters than standard CCs. The server includes a complete `nrpn_constants.py` file with all parameter definitions.
+
+**NRPN Structure:**
+- MSB (CC 99): Category (1, 2, or 3)
+- LSB (CC 98): Specific parameter
+- Data Entry MSB (CC 6): Value (0-127)
+- Data Entry LSB (CC 38): Fine value (usually 0)
+
+**Categories:**
+- **MSB 1**: Track, Source, Filter, Amp, LFO parameters
+- **MSB 2**: FX (Delay and Reverb) parameters
+- **MSB 3**: Trig parameters (Note, Velocity, Length)
+
+**Key Trig Parameters (MSB=3):**
+- LSB 0: Trig Note (pitch per step)
+- LSB 1: Trig Velocity (velocity per step)
+- LSB 2: Trig Length (note length per step)
+
+**Filter Parameters (MSB=1):**
+- LSB 16: Attack
+- LSB 17: Decay
+- LSB 18: Sustain
+- LSB 19: Release
+- LSB 20: Frequency
+- LSB 21: Resonance
+- LSB 22: Type
+- LSB 23: Envelope Depth
+
+**Amp Parameters (MSB=1):**
+- LSB 24: Attack
+- LSB 25: Hold
+- LSB 26: Decay
+- LSB 27: Overdrive
+- LSB 28: Delay Send
+- LSB 29: Reverb Send
+- LSB 30: Pan
+- LSB 31: Volume
+
+See `nrpn_constants.py` for the complete parameter list.
 
 ## Troubleshooting
 

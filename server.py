@@ -11,6 +11,11 @@ from mcp.server import Server
 from mcp.types import Tool, TextContent, Resource
 import mcp.server.stdio
 import logging
+from nrpn_constants import (
+    NRPN_MSB, TrackParams, TrigParams, SourceParams,
+    FilterParams, AmpParams, LFOParams, DelayParams, ReverbParams,
+    get_param_name
+)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -228,6 +233,110 @@ async def list_tools() -> list[Tool]:
                 },
                 "required": ["dump_type"]
             }
+        ),
+        Tool(
+            name="send_nrpn",
+            description="Send an NRPN (Non-Registered Parameter Number) message to control Digitakt parameters. NRPNs provide access to more parameters than standard CCs, including per-trig control (note, velocity, length), filter, amp, LFO, and effects parameters.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "msb": {
+                        "type": "integer",
+                        "description": "NRPN MSB (Most Significant Byte). 1=Track/Trig/Source/Filter/Amp, 2=FX, 3=Trig Note/Velocity/Length",
+                        "minimum": 0,
+                        "maximum": 127
+                    },
+                    "lsb": {
+                        "type": "integer",
+                        "description": "NRPN LSB (Least Significant Byte) - the specific parameter number",
+                        "minimum": 0,
+                        "maximum": 127
+                    },
+                    "value": {
+                        "type": "integer",
+                        "description": "Parameter value (0-127)",
+                        "minimum": 0,
+                        "maximum": 127
+                    },
+                    "channel": {
+                        "type": "integer",
+                        "description": "MIDI channel (1-16). Default is 1.",
+                        "minimum": 1,
+                        "maximum": 16,
+                        "default": 1
+                    }
+                },
+                "required": ["msb", "lsb", "value"]
+            }
+        ),
+        Tool(
+            name="set_trig_note",
+            description="Set the note/pitch for a trig (step). This is a convenience wrapper for NRPN MSB=3, LSB=0.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "note": {
+                        "type": "integer",
+                        "description": "MIDI note number (0-127). For Digitakt: 60=C3",
+                        "minimum": 0,
+                        "maximum": 127
+                    },
+                    "channel": {
+                        "type": "integer",
+                        "description": "MIDI channel (1-16). Default is 1.",
+                        "minimum": 1,
+                        "maximum": 16,
+                        "default": 1
+                    }
+                },
+                "required": ["note"]
+            }
+        ),
+        Tool(
+            name="set_trig_velocity",
+            description="Set the velocity for a trig (step). This is a convenience wrapper for NRPN MSB=3, LSB=1.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "velocity": {
+                        "type": "integer",
+                        "description": "Velocity (0-127)",
+                        "minimum": 0,
+                        "maximum": 127
+                    },
+                    "channel": {
+                        "type": "integer",
+                        "description": "MIDI channel (1-16). Default is 1.",
+                        "minimum": 1,
+                        "maximum": 16,
+                        "default": 1
+                    }
+                },
+                "required": ["velocity"]
+            }
+        ),
+        Tool(
+            name="set_trig_length",
+            description="Set the note length for a trig (step). This is a convenience wrapper for NRPN MSB=3, LSB=2.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "length": {
+                        "type": "integer",
+                        "description": "Note length (0-127)",
+                        "minimum": 0,
+                        "maximum": 127
+                    },
+                    "channel": {
+                        "type": "integer",
+                        "description": "MIDI channel (1-16). Default is 1.",
+                        "minimum": 1,
+                        "maximum": 16,
+                        "default": 1
+                    }
+                },
+                "required": ["length"]
+            }
         )
     ]
 
@@ -382,6 +491,81 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             return [TextContent(
                 type="text",
                 text=f"Sent SysEx dump request for {dump_type}: F0 {hex_display} F7\n\nNote: The exact SysEx format for Digitakt dump requests is not publicly documented. This sends a basic request structure that may need adjustment. You may need to use Elektron Transfer software or capture actual dump requests to determine the correct format."
+            )]
+
+        elif name == "send_nrpn":
+            msb = arguments["msb"]
+            lsb = arguments["lsb"]
+            value = arguments["value"]
+            channel = arguments.get("channel", 1) - 1  # Convert to 0-indexed
+
+            # Send NRPN message (requires 4 CC messages)
+            # 1. CC 99 (NRPN MSB)
+            msg1 = mido.Message('control_change', control=99, value=msb, channel=channel)
+            output_port.send(msg1)
+
+            # 2. CC 98 (NRPN LSB)
+            msg2 = mido.Message('control_change', control=98, value=lsb, channel=channel)
+            output_port.send(msg2)
+
+            # 3. CC 6 (Data Entry MSB)
+            msg3 = mido.Message('control_change', control=6, value=value, channel=channel)
+            output_port.send(msg3)
+
+            # 4. CC 38 (Data Entry LSB) - typically 0
+            msg4 = mido.Message('control_change', control=38, value=0, channel=channel)
+            output_port.send(msg4)
+
+            param_name = get_param_name(msb, lsb)
+
+            return [TextContent(
+                type="text",
+                text=f"Sent NRPN: {param_name} (MSB={msb}, LSB={lsb}) = {value} on channel {channel+1}"
+            )]
+
+        elif name == "set_trig_note":
+            note = arguments["note"]
+            channel = arguments.get("channel", 1) - 1
+
+            # NRPN MSB=3, LSB=0 for trig note
+            output_port.send(mido.Message('control_change', control=99, value=3, channel=channel))
+            output_port.send(mido.Message('control_change', control=98, value=0, channel=channel))
+            output_port.send(mido.Message('control_change', control=6, value=note, channel=channel))
+            output_port.send(mido.Message('control_change', control=38, value=0, channel=channel))
+
+            return [TextContent(
+                type="text",
+                text=f"Set trig note to {note} on channel {channel+1}"
+            )]
+
+        elif name == "set_trig_velocity":
+            velocity = arguments["velocity"]
+            channel = arguments.get("channel", 1) - 1
+
+            # NRPN MSB=3, LSB=1 for trig velocity
+            output_port.send(mido.Message('control_change', control=99, value=3, channel=channel))
+            output_port.send(mido.Message('control_change', control=98, value=1, channel=channel))
+            output_port.send(mido.Message('control_change', control=6, value=velocity, channel=channel))
+            output_port.send(mido.Message('control_change', control=38, value=0, channel=channel))
+
+            return [TextContent(
+                type="text",
+                text=f"Set trig velocity to {velocity} on channel {channel+1}"
+            )]
+
+        elif name == "set_trig_length":
+            length = arguments["length"]
+            channel = arguments.get("channel", 1) - 1
+
+            # NRPN MSB=3, LSB=2 for trig length
+            output_port.send(mido.Message('control_change', control=99, value=3, channel=channel))
+            output_port.send(mido.Message('control_change', control=98, value=2, channel=channel))
+            output_port.send(mido.Message('control_change', control=6, value=length, channel=channel))
+            output_port.send(mido.Message('control_change', control=38, value=0, channel=channel))
+
+            return [TextContent(
+                type="text",
+                text=f"Set trig length to {length} on channel {channel+1}"
             )]
 
         else:
