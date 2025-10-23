@@ -66,13 +66,13 @@ async def list_tools() -> list[Tool]:
     return [
         Tool(
             name="send_note",
-            description="Send a MIDI note on/off message to the Digitakt. Can play drums on specific tracks.",
+            description="Send a MIDI note on/off message to the Digitakt. To trigger one-shots on specific tracks, use notes 0-7 (Track 1-8). To play the active track chromatically, use notes 12-84.",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "note": {
                         "type": "integer",
-                        "description": "MIDI note number (0-127). For Digitakt drums: 60=C3 (Track 1), 61=C#3 (Track 2), etc.",
+                        "description": "MIDI note number (0-127). Track triggers: 0-7 (Track 1-8). Chromatic: 12-84 (plays active track). Examples: 0=Track 1 kick, 1=Track 2 snare, 60=C3 on active track.",
                         "minimum": 0,
                         "maximum": 127
                     },
@@ -98,6 +98,42 @@ async def list_tools() -> list[Tool]:
                     }
                 },
                 "required": ["note"]
+            }
+        ),
+        Tool(
+            name="trigger_track",
+            description="Trigger a one-shot sample on a specific Digitakt II track (1-16). This is a convenience wrapper that sends the correct MIDI note (0-15) to trigger the track.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "track": {
+                        "type": "integer",
+                        "description": "Track number (1-16). Tracks 1-16 correspond to MIDI notes 0-15.",
+                        "minimum": 1,
+                        "maximum": 16
+                    },
+                    "velocity": {
+                        "type": "integer",
+                        "description": "Note velocity (1-127). Default is 100.",
+                        "minimum": 1,
+                        "maximum": 127,
+                        "default": 100
+                    },
+                    "duration": {
+                        "type": "number",
+                        "description": "How long to hold the note in seconds. Default is 0.1 seconds.",
+                        "minimum": 0.001,
+                        "default": 0.1
+                    },
+                    "channel": {
+                        "type": "integer",
+                        "description": "MIDI channel (1-16). Default is 1 (AUTO CHANNEL).",
+                        "minimum": 1,
+                        "maximum": 16,
+                        "default": 1
+                    }
+                },
+                "required": ["track"]
             }
         ),
         Tool(
@@ -370,6 +406,31 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             return [TextContent(
                 type="text",
                 text=f"Sent note {note} (velocity {velocity}) on channel {channel+1} for {duration}s"
+            )]
+
+        elif name == "trigger_track":
+            track = arguments["track"]
+            velocity = arguments.get("velocity", 100)
+            duration = arguments.get("duration", 0.1)
+            channel = arguments.get("channel", 1) - 1  # Convert to 0-indexed
+
+            # Convert track number (1-8) to MIDI note (0-7)
+            note = track - 1
+
+            # Send note on
+            msg_on = mido.Message('note_on', note=note, velocity=velocity, channel=channel)
+            output_port.send(msg_on)
+
+            # Wait for duration
+            await asyncio.sleep(duration)
+
+            # Send note off
+            msg_off = mido.Message('note_off', note=note, velocity=0, channel=channel)
+            output_port.send(msg_off)
+
+            return [TextContent(
+                type="text",
+                text=f"Triggered Track {track} (note {note}, velocity {velocity}) on channel {channel+1} for {duration}s"
             )]
 
         elif name == "send_cc":

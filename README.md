@@ -58,14 +58,31 @@ Then restart Claude Desktop.
 Send a MIDI note to trigger drums on the Digitakt.
 
 **Parameters:**
-- `note` (required): MIDI note number (0-127). For Digitakt: 60=C3 (Track 1), 61=C#3 (Track 2), etc.
+- `note` (required): MIDI note number (0-127). Notes 0-7 trigger tracks 1-8. Notes 12-84 play active track chromatically.
 - `velocity` (optional): Note velocity (1-127), default 100
 - `duration` (optional): How long to hold the note in seconds, default 0.1
 - `channel` (optional): MIDI channel (1-16), default 1
 
-**Example:**
+**Examples:**
 ```
-Play kick drum on track 1
+Play note 0 to trigger track 1
+Play note 60 on the active track
+```
+
+### trigger_track
+Trigger a one-shot sample on a specific Digitakt II track (convenience wrapper).
+
+**Parameters:**
+- `track` (required): Track number (1-16)
+- `velocity` (optional): Note velocity (1-127), default 100
+- `duration` (optional): How long to hold the note in seconds, default 0.1
+- `channel` (optional): MIDI channel (1-16), default 1
+
+**Examples:**
+```
+Trigger track 1 (kick)
+Trigger track 9 with velocity 127
+Trigger track 16
 ```
 
 ### send_cc
@@ -208,14 +225,30 @@ Shows the current connection status to the Digitakt MIDI ports.
 ## Digitakt MIDI Reference
 
 ### Note Numbers for Tracks
-- Track 1: C3 (60)
-- Track 2: C#3 (61)
-- Track 3: D3 (62)
-- Track 4: D#3 (63)
-- Track 5: E3 (64)
-- Track 6: F3 (65)
-- Track 7: F#3 (66)
-- Track 8: G3 (67)
+
+**To trigger one-shots on specific tracks (regardless of active track):**
+- Track 1: MIDI note **0** (C-2 / C0)
+- Track 2: MIDI note **1** (C#-2 / C#0)
+- Track 3: MIDI note **2** (D-2 / D0)
+- Track 4: MIDI note **3** (D#-2 / D#0)
+- Track 5: MIDI note **4** (E-2 / E0)
+- Track 6: MIDI note **5** (F-2 / F0)
+- Track 7: MIDI note **6** (F#-2 / F#0)
+- Track 8: MIDI note **7** (G-2 / G0)
+- Track 9: MIDI note **8** (G#-2 / G#0)
+- Track 10: MIDI note **9** (A-2 / A0)
+- Track 11: MIDI note **10** (A#-2 / A#0)
+- Track 12: MIDI note **11** (B-2 / B0)
+- Track 13: MIDI note **12** (C-1 / C1)
+- Track 14: MIDI note **13** (C#-1 / C#1)
+- Track 15: MIDI note **14** (D-1 / D1)
+- Track 16: MIDI note **15** (D#-1 / D#1)
+
+**To play the currently active track chromatically:**
+- MIDI notes **12 and above** (C1+) will play the active track at different pitches
+- Note: This overlaps with track 13-16 triggers, so if you want chromatic playback, use notes higher than 15
+
+**Note:** MIDI channels 1-16 can be assigned to tracks 1-16, or use AUTO CHANNEL to control the currently active track.
 
 ### Common CC Parameters
 Check the Digitakt manual for the full CC map. Some common ones:
