@@ -373,6 +373,73 @@ async def list_tools() -> list[Tool]:
                 },
                 "required": ["length"]
             }
+        ),
+        Tool(
+            name="send_midi_start",
+            description="Send MIDI Start message to start the Digitakt's sequencer from the beginning. This is a standard MIDI transport control message.",
+            inputSchema={
+                "type": "object",
+                "properties": {}
+            }
+        ),
+        Tool(
+            name="send_midi_stop",
+            description="Send MIDI Stop message to stop the Digitakt's sequencer. This is a standard MIDI transport control message.",
+            inputSchema={
+                "type": "object",
+                "properties": {}
+            }
+        ),
+        Tool(
+            name="send_midi_continue",
+            description="Send MIDI Continue message to resume the Digitakt's sequencer from its current position. This is a standard MIDI transport control message.",
+            inputSchema={
+                "type": "object",
+                "properties": {}
+            }
+        ),
+        Tool(
+            name="send_song_position",
+            description="Send MIDI Song Position Pointer to jump to a specific position in the sequence. Position is measured in MIDI beats (16th notes).",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "position": {
+                        "type": "integer",
+                        "description": "Song position in MIDI beats (16th notes). 0 = start, 16 = 1 bar at 4/4 time.",
+                        "minimum": 0,
+                        "maximum": 16383
+                    }
+                },
+                "required": ["position"]
+            }
+        ),
+        Tool(
+            name="play_with_clock",
+            description="Start the Digitakt sequencer and send MIDI clock for a specified duration. The Digitakt requires receiving MIDI clock to play when externally controlled.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "bars": {
+                        "type": "number",
+                        "description": "Number of bars to play (in 4/4 time). Default is 4 bars.",
+                        "minimum": 0.25,
+                        "default": 4
+                    },
+                    "bpm": {
+                        "type": "number",
+                        "description": "Tempo in beats per minute. Default is 120 BPM.",
+                        "minimum": 20,
+                        "maximum": 300,
+                        "default": 120
+                    },
+                    "send_stop": {
+                        "type": "boolean",
+                        "description": "Send MIDI Stop after duration. Default is true.",
+                        "default": true
+                    }
+                }
+            }
         )
     ]
 
@@ -627,6 +694,81 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             return [TextContent(
                 type="text",
                 text=f"Set trig length to {length} on channel {channel+1}"
+            )]
+
+        elif name == "send_midi_start":
+            # Send MIDI Start message (0xFA)
+            msg = mido.Message('start')
+            output_port.send(msg)
+
+            return [TextContent(
+                type="text",
+                text="Sent MIDI Start - sequencer should start from beginning"
+            )]
+
+        elif name == "send_midi_stop":
+            # Send MIDI Stop message (0xFC)
+            msg = mido.Message('stop')
+            output_port.send(msg)
+
+            return [TextContent(
+                type="text",
+                text="Sent MIDI Stop - sequencer should stop"
+            )]
+
+        elif name == "send_midi_continue":
+            # Send MIDI Continue message (0xFB)
+            msg = mido.Message('continue')
+            output_port.send(msg)
+
+            return [TextContent(
+                type="text",
+                text="Sent MIDI Continue - sequencer should resume from current position"
+            )]
+
+        elif name == "send_song_position":
+            position = arguments["position"]
+
+            # Send MIDI Song Position Pointer (0xF2)
+            # Position is in MIDI beats (16th notes)
+            msg = mido.Message('songpos', pos=position)
+            output_port.send(msg)
+
+            return [TextContent(
+                type="text",
+                text=f"Sent Song Position Pointer to position {position} (16th note: {position}, bar: {position/16:.2f})"
+            )]
+
+        elif name == "play_with_clock":
+            bars = arguments.get("bars", 4)
+            bpm = arguments.get("bpm", 120)
+            send_stop = arguments.get("send_stop", True)
+
+            # Calculate timing
+            # MIDI clock: 24 pulses per quarter note
+            # At 4/4 time: 96 pulses per bar
+            # Time between pulses = 60 / (bpm * 24)
+            clock_interval = 60.0 / (bpm * 24)
+            total_pulses = int(bars * 96)  # 96 pulses per bar in 4/4
+
+            # Send Start message
+            output_port.send(mido.Message('start'))
+
+            # Send clock pulses
+            for i in range(total_pulses):
+                output_port.send(mido.Message('clock'))
+                await asyncio.sleep(clock_interval)
+
+            # Optionally send Stop
+            if send_stop:
+                output_port.send(mido.Message('stop'))
+                status = "and stopped"
+            else:
+                status = "(still running)"
+
+            return [TextContent(
+                type="text",
+                text=f"Played {bars} bars at {bpm} BPM {status}"
             )]
 
         else:

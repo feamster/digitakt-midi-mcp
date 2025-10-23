@@ -9,6 +9,7 @@ An MCP (Model Context Protocol) server for controlling the Elektron Digitakt II 
 - **Program Changes**: Switch between patterns
 - **Note Sequences**: Send rhythmic patterns programmatically
 - **NRPN Support**: Advanced parameter control including per-trig note, velocity, and length
+- **Transport Control**: Start/Stop/Continue sequencer playback and jump to positions
 - **SysEx Support**: Send raw SysEx messages for advanced control and pattern programming
 
 ## Installation
@@ -176,6 +177,68 @@ Convenience tool to set the length for a trig (step).
 **Parameters:**
 - `length` (required): Note length (0-127)
 - `channel` (optional): MIDI channel (1-16), default 1
+
+### send_midi_start
+Send MIDI Start message to start the Digitakt's sequencer from the beginning.
+
+**Parameters:** None
+
+**Example:**
+```
+Start the Digitakt sequencer
+```
+
+**Important:** The Digitakt requires MIDI Clock to actually play when externally controlled. Use `play_with_clock` instead for reliable playback, or ensure you're sending clock pulses separately. Requires TRANSPORT RECEIVE and CLOCK RECEIVE enabled in MIDI SYNC settings.
+
+### send_midi_stop
+Send MIDI Stop message to stop the Digitakt's sequencer.
+
+**Parameters:** None
+
+**Example:**
+```
+Stop the Digitakt sequencer
+```
+
+### send_midi_continue
+Send MIDI Continue message to resume the Digitakt's sequencer from its current position.
+
+**Parameters:** None
+
+**Example:**
+```
+Resume the Digitakt sequencer
+```
+
+### send_song_position
+Send MIDI Song Position Pointer to jump to a specific position in the sequence.
+
+**Parameters:**
+- `position` (required): Song position in MIDI beats (16th notes). 0 = start, 16 = 1 bar in 4/4 time.
+
+**Examples:**
+```
+Jump to the beginning (position 0)
+Jump to bar 2 (position 32)
+Jump to the 3rd 16th note (position 2)
+```
+
+### play_with_clock
+Start the Digitakt sequencer and send MIDI clock for a specified duration. This is the recommended way to control Digitakt playback remotely.
+
+**Parameters:**
+- `bars` (optional): Number of bars to play in 4/4 time. Default is 4 bars.
+- `bpm` (optional): Tempo in beats per minute. Default is 120 BPM.
+- `send_stop` (optional): Send MIDI Stop after duration. Default is true.
+
+**Examples:**
+```
+Play for 4 bars at 120 BPM
+Play for 8 bars at 140 BPM
+Play for 2 bars and keep running (send_stop=false)
+```
+
+**Use case:** This tool sends MIDI Start + Clock pulses + Stop, which the Digitakt needs to actually play when externally controlled. You can use this to play the Digitakt's sequencer while also sending notes or CC messages.
 
 ### send_sysex
 Send a System Exclusive (SysEx) message to the Digitakt for advanced control and pattern programming.
