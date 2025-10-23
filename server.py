@@ -13,7 +13,8 @@ import mcp.server.stdio
 import logging
 from nrpn_constants import (
     NRPN_MSB, TrackParams, TrigParams, SourceParams,
-    FilterParams, AmpParams, LFOParams, DelayParams, ReverbParams,
+    FilterParams, AmpParams, LFO1Params, LFO2Params, LFO3Params,
+    DelayParams, ReverbParams, ChorusParams,
     get_param_name
 )
 
