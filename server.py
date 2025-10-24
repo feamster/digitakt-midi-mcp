@@ -624,6 +624,12 @@ async def list_tools() -> list[Tool]:
                         "maximum": 16,
                         "default": 1
                     },
+                    "midi_start_at_beat": {
+                        "type": "number",
+                        "description": "Beat number (0-based) to send MIDI Start and begin MIDI Clock. Before this beat, only note triggers are sent (no transport control). When starting mid-sequence (beat > 0), a MIDI Song Position Pointer message is sent before MIDI Start to ensure the Digitakt sequencer aligns with the correct beat position. Default is 0 (send MIDI Start immediately). Use this for count-in workflows where you want to arm recording during count-in, then start Digitakt sequencer at a specific beat.",
+                        "minimum": 0,
+                        "default": 0
+                    },
                     "send_stop": {
                         "type": "boolean",
                         "description": "Send MIDI Stop after duration. Default is true.",
@@ -1196,11 +1202,14 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             track_triggers = arguments.get("track_triggers", [])
             melody_notes = arguments.get("melody_notes", [])
             channel = arguments.get("channel", 1) - 1
+            midi_start_at_beat = arguments.get("midi_start_at_beat", 0)
             send_stop = arguments.get("send_stop", True)
 
             # Calculate timing
             clock_interval = 60.0 / (bpm * 24)
+            beat_duration = 60.0 / bpm
             total_pulses = int(bars * 96)
+            start_pulse = int(midi_start_at_beat * 24)  # Pulse index for MIDI Start
 
             # Prepare combined event schedule with all notes
             event_schedule = []
@@ -1228,16 +1237,26 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             # Sort all events by pulse index
             event_schedule.sort(key=lambda x: x[1])
 
-            # Send Start message
-            output_port.send(mido.Message('start'))
-
             import time
             start_time = time.time()
             event_idx = 0
+            midi_started = False
 
-            # Send clock pulses and all scheduled events
+            # Process all pulses/beats
             for i in range(total_pulses):
-                output_port.send(mido.Message('clock'))
+                # Check if we should send MIDI Start at this pulse
+                if i == start_pulse and not midi_started:
+                    # Send Song Position Pointer if starting mid-sequence
+                    if midi_start_at_beat > 0:
+                        # SPP is in "MIDI beats" (16th notes), so 1 quarter note = 4 MIDI beats
+                        spp_position = int(midi_start_at_beat * 4)
+                        output_port.send(mido.Message('songpos', pos=spp_position))
+                    output_port.send(mido.Message('start'))
+                    midi_started = True
+
+                # Send MIDI Clock only if we've started
+                if midi_started:
+                    output_port.send(mido.Message('clock'))
 
                 # Check if we need to send any events at this pulse
                 while event_idx < len(event_schedule) and event_schedule[event_idx][1] == i:
@@ -1254,16 +1273,19 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 if sleep_duration > 0:
                     await asyncio.sleep(sleep_duration)
 
-            # Optionally send Stop
-            if send_stop:
+            # Optionally send Stop (only if we actually started)
+            if send_stop and midi_started:
                 output_port.send(mido.Message('stop'))
                 status = "and stopped"
-            else:
+            elif midi_started:
                 status = "(still running)"
+            else:
+                status = "(no MIDI Start sent - all notes before midi_start_at_beat)"
 
+            count_in_info = f" (MIDI Start at beat {midi_start_at_beat})" if midi_start_at_beat > 0 else ""
             return [TextContent(
                 type="text",
-                text=f"Played {bars} bars at {bpm} BPM with {len(track_triggers)} track triggers and {len(melody_notes)} melody notes {status}"
+                text=f"Played {bars} bars at {bpm} BPM with {len(track_triggers)} track triggers and {len(melody_notes)} melody notes{count_in_info} {status}"
             )]
 
         elif name == "save_last_melody":

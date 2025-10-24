@@ -360,14 +360,22 @@ Start the Digitakt pattern and play both track triggers AND melody notes simulta
 - `track_triggers` (optional): Array of `[beat, track, velocity]` where beat is 0-based quarter note, track is 1-16, velocity is 1-127. Default is empty array.
 - `melody_notes` (optional): Array of `[beat, note, velocity, duration]` where beat is 0-based quarter note, note is MIDI note 12-127, velocity is 1-127, duration is in seconds. Default is empty array.
 - `channel` (optional): MIDI channel for melody notes (1-16). Track triggers always use channel 1. Default is 1.
+- `midi_start_at_beat` (optional): Beat number (0-based) to send MIDI Start and begin MIDI Clock. Before this beat, only note triggers are sent (no transport control). When starting mid-sequence (beat > 0), a MIDI Song Position Pointer message is sent before MIDI Start to ensure the Digitakt sequencer aligns with the correct beat position. Default is 0 (send MIDI Start immediately). **Use this for count-in workflows** where you want to arm recording during count-in, then start Digitakt sequencer at a specific beat.
 - `send_stop` (optional): Send MIDI Stop after duration. Default is true.
 
 **Examples:**
 ```
-1-bar count-in on track 15, then 4-bar melody:
+1-bar count-in on track 15, then 4-bar melody (immediate start):
 bars: 5
 track_triggers: [[0, 15, 100], [1, 15, 100], [2, 15, 100], [3, 15, 100]]
 melody_notes: [[4, 62, 85, 0.5], [5, 65, 80, 0.5], [6, 69, 85, 0.5], [7, 71, 80, 0.5], ...]
+
+4-bar count-in, THEN start transport (live recording workflow):
+bars: 12
+midi_start_at_beat: 16  # MIDI Start at beat 16 (bar 5)
+track_triggers: [[0,15,100], [1,15,100], ... [15,15,100]]  # 16 clicks (4 bars)
+melody_notes: [[16, 62, 85, 0.5], [17, 65, 80, 0.5], ...]  # Melody starts at beat 16
+# Workflow: User hears count-in → arms recording → Song Position Pointer + MIDI Start sent → melody recorded in sync
 
 Kick on beats 0, 4, 8, 12 with melody throughout:
 track_triggers: [[0, 1, 100], [4, 1, 100], [8, 1, 100], [12, 1, 100]]
