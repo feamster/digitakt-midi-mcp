@@ -651,6 +651,157 @@ async def list_tools() -> list[Tool]:
                 },
                 "required": ["filename"]
             }
+        ),
+        Tool(
+            name="send_filter_sweep",
+            description="Smoothly sweep the filter cutoff from one value to another over a specified duration. Useful for creating dynamic filter movements.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "start_value": {
+                        "type": "integer",
+                        "description": "Starting filter cutoff value (0-127)",
+                        "minimum": 0,
+                        "maximum": 127
+                    },
+                    "end_value": {
+                        "type": "integer",
+                        "description": "Ending filter cutoff value (0-127)",
+                        "minimum": 0,
+                        "maximum": 127
+                    },
+                    "duration_sec": {
+                        "type": "number",
+                        "description": "Duration of the sweep in seconds",
+                        "minimum": 0.1
+                    },
+                    "curve": {
+                        "type": "string",
+                        "description": "Sweep curve shape: 'linear' (constant rate), 'exponential' (fast start, slow end), 'logarithmic' (slow start, fast end)",
+                        "enum": ["linear", "exponential", "logarithmic"],
+                        "default": "linear"
+                    },
+                    "steps": {
+                        "type": "integer",
+                        "description": "Number of CC messages to send (more = smoother). Default is 50.",
+                        "minimum": 2,
+                        "maximum": 200,
+                        "default": 50
+                    },
+                    "channel": {
+                        "type": "integer",
+                        "description": "MIDI channel (1-16). Default is 1.",
+                        "minimum": 1,
+                        "maximum": 16,
+                        "default": 1
+                    }
+                },
+                "required": ["start_value", "end_value", "duration_sec"]
+            }
+        ),
+        Tool(
+            name="send_filter_envelope",
+            description="Apply an ADSR-style envelope to the filter cutoff. Creates organic filter movements with attack, decay, sustain, and release stages.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "attack_sec": {
+                        "type": "number",
+                        "description": "Attack time in seconds - time to reach peak (127)",
+                        "minimum": 0.01
+                    },
+                    "decay_sec": {
+                        "type": "number",
+                        "description": "Decay time in seconds - time to drop from peak to sustain level",
+                        "minimum": 0.01
+                    },
+                    "sustain_level": {
+                        "type": "integer",
+                        "description": "Sustain filter cutoff value (0-127)",
+                        "minimum": 0,
+                        "maximum": 127
+                    },
+                    "release_sec": {
+                        "type": "number",
+                        "description": "Release time in seconds - time to return to 0",
+                        "minimum": 0.01
+                    },
+                    "steps_per_stage": {
+                        "type": "integer",
+                        "description": "Number of CC messages per stage (more = smoother). Default is 20.",
+                        "minimum": 2,
+                        "maximum": 100,
+                        "default": 20
+                    },
+                    "channel": {
+                        "type": "integer",
+                        "description": "MIDI channel (1-16). Default is 1.",
+                        "minimum": 1,
+                        "maximum": 16,
+                        "default": 1
+                    }
+                },
+                "required": ["attack_sec", "decay_sec", "sustain_level", "release_sec"]
+            }
+        ),
+        Tool(
+            name="play_with_filter_automation",
+            description="Play a pattern with automated filter cutoff changes at specific beats. Combines transport control, track triggers, and precise filter automation.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "bars": {
+                        "type": "number",
+                        "description": "Number of bars to play (in 4/4 time). Default is 4 bars.",
+                        "minimum": 0.25,
+                        "default": 4
+                    },
+                    "bpm": {
+                        "type": "number",
+                        "description": "Tempo in beats per minute. Default is 120 BPM.",
+                        "minimum": 20,
+                        "maximum": 300,
+                        "default": 120
+                    },
+                    "track_triggers": {
+                        "type": "array",
+                        "description": "Optional array of [beat, track, velocity] where beat is 0-based quarter note, track is 1-16, velocity is 1-127.",
+                        "items": {
+                            "type": "array",
+                            "minItems": 2,
+                            "maxItems": 3
+                        },
+                        "default": []
+                    },
+                    "filter_events": {
+                        "type": "array",
+                        "description": "Array of [beat, cutoff_value] for timed filter cutoff changes. Beat is 0-based quarter note, cutoff is 0-127.",
+                        "items": {
+                            "type": "array",
+                            "minItems": 2,
+                            "maxItems": 2
+                        }
+                    },
+                    "send_clock": {
+                        "type": "boolean",
+                        "description": "Send MIDI Start and Clock messages. Default is true.",
+                        "default": True
+                    },
+                    "send_stop": {
+                        "type": "boolean",
+                        "description": "Send MIDI Stop after duration. Default is true.",
+                        "default": True
+                    },
+                    "channel": {
+                        "type": "integer",
+                        "description": "MIDI channel (1-16). Default is 1.",
+                        "minimum": 1,
+                        "maximum": 16,
+                        "default": 1
+                    }
+                },
+                "required": ["filter_events"]
+            }
         )
     ]
 
@@ -1357,6 +1508,199 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                     type="text",
                     text=f"Error saving MIDI file: {str(e)}"
                 )]
+
+        elif name == "send_filter_sweep":
+            import math
+
+            start_value = arguments["start_value"]
+            end_value = arguments["end_value"]
+            duration_sec = arguments["duration_sec"]
+            curve = arguments.get("curve", "linear")
+            steps = arguments.get("steps", 50)
+            channel = arguments.get("channel", 1) - 1
+
+            # Calculate step interval
+            interval = duration_sec / steps
+
+            # Generate sweep values based on curve type
+            values = []
+            for i in range(steps + 1):
+                # Normalized position (0.0 to 1.0)
+                t = i / steps
+
+                if curve == "linear":
+                    # Linear interpolation
+                    value = start_value + (end_value - start_value) * t
+                elif curve == "exponential":
+                    # Exponential curve (fast start, slow end)
+                    value = start_value + (end_value - start_value) * (1 - math.exp(-3 * t))
+                elif curve == "logarithmic":
+                    # Logarithmic curve (slow start, fast end)
+                    value = start_value + (end_value - start_value) * math.exp(3 * (t - 1))
+
+                values.append(int(round(value)))
+
+            # Send CC messages with timing
+            import time
+            start_time = time.time()
+
+            for i, value in enumerate(values):
+                # Send CC 74 (filter cutoff)
+                msg = mido.Message('control_change', control=74, value=value, channel=channel)
+                output_port.send(msg)
+
+                # Calculate when next message should be sent
+                if i < len(values) - 1:
+                    next_time = start_time + (i + 1) * interval
+                    sleep_duration = next_time - time.time()
+                    if sleep_duration > 0:
+                        await asyncio.sleep(sleep_duration)
+
+            return [TextContent(
+                type="text",
+                text=f"Sent filter sweep from {start_value} to {end_value} over {duration_sec}s ({curve} curve, {steps} steps) on channel {channel+1}"
+            )]
+
+        elif name == "send_filter_envelope":
+            attack_sec = arguments["attack_sec"]
+            decay_sec = arguments["decay_sec"]
+            sustain_level = arguments["sustain_level"]
+            release_sec = arguments["release_sec"]
+            steps_per_stage = arguments.get("steps_per_stage", 20)
+            channel = arguments.get("channel", 1) - 1
+
+            # Build envelope stages
+            stages = []
+
+            # Attack: 0 -> 127
+            attack_interval = attack_sec / steps_per_stage
+            for i in range(steps_per_stage + 1):
+                t = i / steps_per_stage
+                value = int(round(127 * t))
+                stages.append((attack_interval, value))
+
+            # Decay: 127 -> sustain_level
+            decay_interval = decay_sec / steps_per_stage
+            for i in range(1, steps_per_stage + 1):
+                t = i / steps_per_stage
+                value = int(round(127 + (sustain_level - 127) * t))
+                stages.append((decay_interval, value))
+
+            # Sustain: hold at sustain_level (no delay, just one message)
+            stages.append((0, sustain_level))
+
+            # Release: sustain_level -> 0
+            release_interval = release_sec / steps_per_stage
+            for i in range(1, steps_per_stage + 1):
+                t = i / steps_per_stage
+                value = int(round(sustain_level * (1 - t)))
+                stages.append((release_interval, value))
+
+            # Send CC messages with timing
+            import time
+            start_time = time.time()
+            current_time = 0
+
+            for i, (interval, value) in enumerate(stages):
+                # Send CC 74 (filter cutoff)
+                msg = mido.Message('control_change', control=74, value=value, channel=channel)
+                output_port.send(msg)
+
+                # Wait for interval
+                if interval > 0 and i < len(stages) - 1:
+                    current_time += interval
+                    next_time = start_time + current_time
+                    sleep_duration = next_time - time.time()
+                    if sleep_duration > 0:
+                        await asyncio.sleep(sleep_duration)
+
+            total_time = attack_sec + decay_sec + release_sec
+            return [TextContent(
+                type="text",
+                text=f"Sent filter ADSR envelope: A={attack_sec}s D={decay_sec}s S={sustain_level} R={release_sec}s (total {total_time:.2f}s) on channel {channel+1}"
+            )]
+
+        elif name == "play_with_filter_automation":
+            bars = arguments.get("bars", 4)
+            bpm = arguments.get("bpm", 120)
+            track_triggers = arguments.get("track_triggers", [])
+            filter_events = arguments["filter_events"]
+            send_clock = arguments.get("send_clock", True)
+            send_stop = arguments.get("send_stop", True)
+            channel = arguments.get("channel", 1) - 1
+
+            # Calculate timing
+            clock_interval = 60.0 / (bpm * 24)
+            total_pulses = int(bars * 96)
+
+            # Prepare track trigger schedule
+            trigger_schedule = []
+            for trigger in track_triggers:
+                beat = trigger[0]
+                track = trigger[1]
+                velocity = trigger[2] if len(trigger) > 2 else 100
+                pulse_index = int(beat * 24)
+                note = track - 1  # Track 1-16 = note 0-15
+                trigger_schedule.append((pulse_index, note, velocity))
+            trigger_schedule.sort(key=lambda x: x[0])
+
+            # Prepare filter event schedule
+            filter_schedule = []
+            for event in filter_events:
+                beat = event[0]
+                cutoff = event[1]
+                pulse_index = int(beat * 24)
+                filter_schedule.append((pulse_index, cutoff))
+            filter_schedule.sort(key=lambda x: x[0])
+
+            # Send Start if requested
+            if send_clock:
+                output_port.send(mido.Message('start'))
+
+            import time
+            start_time = time.time()
+            trigger_idx = 0
+            filter_idx = 0
+
+            # Send clock pulses, triggers, and filter automation
+            for i in range(total_pulses):
+                # Send clock if requested
+                if send_clock:
+                    output_port.send(mido.Message('clock'))
+
+                # Check for track triggers at this pulse
+                while trigger_idx < len(trigger_schedule) and trigger_schedule[trigger_idx][0] == i:
+                    pulse, note, velocity = trigger_schedule[trigger_idx]
+                    output_port.send(mido.Message('note_on', note=note, velocity=velocity, channel=0))
+                    asyncio.create_task(_delayed_note_off(note, 0.05, 0))
+                    trigger_idx += 1
+
+                # Check for filter events at this pulse
+                while filter_idx < len(filter_schedule) and filter_schedule[filter_idx][0] == i:
+                    pulse, cutoff = filter_schedule[filter_idx]
+                    output_port.send(mido.Message('control_change', control=74, value=cutoff, channel=channel))
+                    filter_idx += 1
+
+                # Calculate when next pulse should occur
+                next_pulse_time = start_time + (i + 1) * clock_interval
+                sleep_duration = next_pulse_time - time.time()
+
+                if sleep_duration > 0:
+                    await asyncio.sleep(sleep_duration)
+
+            # Send Stop if requested
+            if send_clock and send_stop:
+                output_port.send(mido.Message('stop'))
+                status = "and stopped"
+            elif send_clock:
+                status = "(still running)"
+            else:
+                status = "(no transport control)"
+
+            return [TextContent(
+                type="text",
+                text=f"Played {bars} bars at {bpm} BPM with {len(track_triggers)} track triggers and {len(filter_events)} filter events {status}"
+            )]
 
         else:
             return [TextContent(
