@@ -446,6 +446,265 @@ Request a pattern dump from bank 0, pattern 0
 - Use Elektron Transfer for official dumps
 - Adjust the command bytes based on experimentation
 
+## Parameter Automation Framework
+
+The Digitakt MIDI MCP server includes a powerful parameter automation framework that allows you to create dynamic, evolving sounds by automating any parameter in real-time. This includes filter sweeps, envelope shaping, LFO modulation, and more.
+
+**Important:** Parameter automation is sent in real-time via MIDI and is NOT saved to Digitakt patterns. It's perfect for live performance, recording to audio, or DAW integration.
+
+### Preset Storage Location
+
+All automation presets are stored in: `~/.digitakt-mcp/presets/`
+
+This directory is automatically created when the server starts.
+
+### Available Parameters
+
+Use the `list_parameters` tool to see all available parameters organized by category:
+- **Filter**: cutoff, resonance, type, envelope (ADSR + depth)
+- **Amp**: volume, pan, envelope (ADSHR), mode
+- **Source/Sample**: tune, pitch, sample start/length/loop, sample level
+- **LFO 1/2/3**: speed, multiplier, fade, destination, waveform, start phase, trig mode, depth
+- **FX Sends**: chorus, delay, reverb, overdrive
+- **Delay/Reverb/Chorus FX**: detailed parameters for each effect
+- **Track**: level, mute
+- **Trig**: note, velocity, length
+
+### send_parameter_sweep
+
+Smoothly sweep any parameter from one value to another over a specified duration. Perfect for filter sweeps, pitch bends, LFO depth fades, etc.
+
+**Parameters:**
+- `parameter` (required): Parameter name (e.g., 'filter_cutoff', 'lfo1_depth', 'sample_start')
+- `start_value` (required): Starting value (0-127)
+- `end_value` (required): Ending value (0-127)
+- `duration_sec` (required): Duration in seconds
+- `curve` (optional): 'linear', 'exponential', or 'logarithmic', default 'linear'
+- `steps` (optional): Number of messages to send (more = smoother), default 50
+- `channel` (optional): MIDI channel (1-16), default 1
+
+**Examples:**
+```
+Sweep filter cutoff from closed to open over 4 seconds
+send_parameter_sweep(parameter="filter_cutoff", start_value=20, end_value=127, duration_sec=4.0)
+
+Exponential LFO depth fade-in
+send_parameter_sweep(parameter="lfo1_depth", start_value=0, end_value=127, duration_sec=2.0, curve="exponential")
+
+Pitch bend down
+send_parameter_sweep(parameter="pitch", start_value=80, end_value=40, duration_sec=1.5, curve="logarithmic")
+```
+
+### send_parameter_envelope
+
+Apply an ADSR-style envelope to any parameter. Creates organic parameter movements with attack, decay, sustain, and release stages.
+
+**Parameters:**
+- `parameter` (required): Parameter name
+- `attack_sec` (required): Attack time (time to reach peak 127)
+- `decay_sec` (required): Decay time (time to drop to sustain level)
+- `sustain_level` (required): Sustain value (0-127)
+- `release_sec` (required): Release time (time to return to 0)
+- `steps_per_stage` (optional): Messages per stage (more = smoother), default 20
+- `channel` (optional): MIDI channel (1-16), default 1
+
+**Examples:**
+```
+Filter cutoff envelope (classic filter pluck)
+send_parameter_envelope(parameter="filter_cutoff", attack_sec=0.01, decay_sec=0.5, sustain_level=40, release_sec=1.0)
+
+LFO depth swell
+send_parameter_envelope(parameter="lfo1_depth", attack_sec=2.0, decay_sec=1.0, sustain_level=80, release_sec=2.0)
+
+Sample start modulation
+send_parameter_envelope(parameter="sample_start", attack_sec=0.1, decay_sec=0.3, sustain_level=60, release_sec=0.5)
+```
+
+### play_pattern_with_parameter_automation
+
+Play a pattern with automated parameter changes at specific beats. This is the main tool for creating complex, evolving sounds. Supports multiple parameters changing simultaneously.
+
+**Parameters:**
+- `parameter_automation` (required): Object mapping parameter names to [beat, value] pairs
+- `bars` (optional): Number of bars to play (4/4 time), default 4
+- `bpm` (optional): Tempo in BPM, default 120
+- `track_triggers` (optional): Array of [beat, track, velocity] for triggering tracks
+- `send_clock` (optional): Send MIDI Start/Clock, default true
+- `send_stop` (optional): Send MIDI Stop after duration, default true
+- `channel` (optional): MIDI channel (1-16), default 1
+
+**Examples:**
+```
+Multi-parameter filter automation
+play_pattern_with_parameter_automation(
+  bars=4,
+  bpm=128,
+  parameter_automation={
+    "filter_cutoff": [[0, 20], [4, 80], [8, 127], [12, 60]],
+    "filter_resonance": [[0, 40], [8, 100], [16, 40]],
+    "lfo1_depth": [[0, 0], [8, 127]]
+  }
+)
+
+Envelope shaping over time
+play_pattern_with_parameter_automation(
+  bars=8,
+  bpm=120,
+  parameter_automation={
+    "filter_attack": [[0, 60], [16, 10], [32, 60]],
+    "filter_decay": [[0, 100], [16, 30]],
+    "amp_release": [[0, 40], [16, 80]]
+  }
+)
+
+LFO modulation build
+play_pattern_with_parameter_automation(
+  bars=4,
+  parameter_automation={
+    "lfo1_speed": [[0, 30], [8, 80], [16, 30]],
+    "lfo1_depth": [[0, 0], [4, 80], [12, 127]],
+    "lfo2_destination": [[0, 20], [8, 21]]
+  }
+)
+```
+
+### save_automation_preset
+
+Save parameter automation as a reusable JSON preset file.
+
+**Parameters:**
+- `preset_name` (required): Name for the preset (without .json extension)
+- `automation` (required): Automation data (same format as play_pattern_with_parameter_automation)
+- `description` (optional): Description of what this preset does
+
+**Example:**
+```
+save_automation_preset(
+  preset_name="wobble_bass",
+  description="LFO-modulated filter wobble for bass",
+  automation={
+    "bars": 4,
+    "bpm": 140,
+    "parameter_automation": {
+      "filter_cutoff": [[0, 60], [16, 60]],
+      "lfo1_speed": [[0, 40], [8, 80]],
+      "lfo1_depth": [[0, 100], [16, 100]]
+    }
+  }
+)
+```
+
+Presets are saved to: `~/.digitakt-mcp/presets/wobble_bass.json`
+
+### load_automation_preset
+
+Load and optionally play a saved automation preset.
+
+**Parameters:**
+- `preset_name` (required): Name of preset to load (without .json extension)
+- `play` (optional): If true, immediately play the preset, default false
+
+**Examples:**
+```
+Load preset data
+load_automation_preset(preset_name="wobble_bass")
+
+Load and play preset
+load_automation_preset(preset_name="wobble_bass", play=true)
+```
+
+### list_automation_presets
+
+List all available automation presets.
+
+**Example:**
+```
+list_automation_presets()
+```
+
+Output shows all presets in `~/.digitakt-mcp/presets/` with their descriptions.
+
+### export_automation_to_midi
+
+Export parameter automation to a standard MIDI file that can be imported into any DAW.
+
+**Parameters:**
+- `filename` (required): Output MIDI filename (will add .mid extension if not present)
+- `automation` (required): Automation data
+- `channel` (optional): MIDI channel (1-16), default 1
+
+**Example:**
+```
+export_automation_to_midi(
+  filename="my_loop",
+  automation={
+    "bars": 4,
+    "bpm": 128,
+    "parameter_automation": {
+      "filter_cutoff": [[0, 20], [8, 127]],
+      "filter_resonance": [[0, 40], [8, 80]]
+    }
+  }
+)
+```
+
+Creates `my_loop.mid` that can be imported into Ableton, Logic, FL Studio, etc.
+
+### list_parameters
+
+List all available parameters that can be automated, organized by category.
+
+**Parameters:**
+- `category` (optional): Filter by category name
+
+**Examples:**
+```
+List all parameters
+list_parameters()
+
+List only Filter parameters
+list_parameters(category="Filter")
+
+List only LFO 1 parameters
+list_parameters(category="LFO 1")
+```
+
+### Workflow Examples
+
+**Live Performance:**
+```
+1. Create several automation presets for different song sections
+2. During your set, trigger different presets:
+   - Verse: load_automation_preset(preset_name="verse_filter", play=true)
+   - Chorus: load_automation_preset(preset_name="chorus_wobble", play=true)
+   - Breakdown: load_automation_preset(preset_name="slow_build", play=true)
+```
+
+**Recording Loops for Composition:**
+```
+1. Program basic pattern on Digitakt (kicks, snares, etc.)
+2. Create automation in Python/Claude:
+   play_pattern_with_parameter_automation(
+     bars=4,
+     bpm=128,
+     parameter_automation={"filter_cutoff": [[0, 20], [8, 127]]}
+   )
+3. Record audio output from Digitakt while automation runs
+4. Import audio loop into DAW
+5. Layer guitar over the loop
+6. Save automation as preset for future use
+```
+
+**DAW Integration:**
+```
+1. Create automation in MCP server
+2. Export to MIDI file:
+   export_automation_to_midi(filename="digitakt_automation.mid", automation={...})
+3. Import MIDI file into DAW
+4. Route MIDI track to Digitakt
+5. DAW now controls Digitakt automation on playback
+```
+
 ## Resources
 
 ### midi://ports

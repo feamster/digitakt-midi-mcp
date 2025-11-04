@@ -11,11 +11,18 @@ from mcp.server import Server
 from mcp.types import Tool, TextContent, Resource
 import mcp.server.stdio
 import logging
+import json
+import os
+from pathlib import Path
 from nrpn_constants import (
     NRPN_MSB, TrackParams, TrigParams, SourceParams,
     FilterParams, AmpParams, LFO1Params, LFO2Params, LFO3Params,
     DelayParams, ReverbParams, ChorusParams,
     get_param_name
+)
+from parameter_map import (
+    PARAMETER_MAP, validate_parameter, get_parameter_info,
+    get_all_parameters, get_parameters_by_category
 )
 
 # Configure logging
@@ -24,6 +31,10 @@ logger = logging.getLogger("digitakt-midi-server")
 
 # MIDI port name - will be auto-detected
 DIGITAKT_PORT_NAME = "Elektron Digitakt II"
+
+# Preset directory
+PRESET_DIR = Path.home() / ".digitakt-mcp" / "presets"
+PRESET_DIR.mkdir(parents=True, exist_ok=True)
 
 # Create server instance
 server = Server("digitakt-midi-server")
@@ -65,6 +76,26 @@ def connect_midi():
 
     except Exception as e:
         logger.error(f"Error connecting to MIDI: {e}")
+
+def send_parameter_change(param_name: str, value: int, channel: int = 0):
+    """
+    Send a parameter change via CC or NRPN
+    channel: 0-indexed MIDI channel
+    """
+    param_info = get_parameter_info(param_name)
+    if not param_info:
+        raise ValueError(f"Unknown parameter: {param_name}")
+
+    if param_info["type"] == "cc":
+        # Send CC message
+        msg = mido.Message('control_change', control=param_info["cc"], value=value, channel=channel)
+        output_port.send(msg)
+    elif param_info["type"] == "nrpn":
+        # Send NRPN message (4 CC messages)
+        output_port.send(mido.Message('control_change', control=99, value=param_info["msb"], channel=channel))
+        output_port.send(mido.Message('control_change', control=98, value=param_info["lsb"], channel=channel))
+        output_port.send(mido.Message('control_change', control=6, value=value, channel=channel))
+        output_port.send(mido.Message('control_change', control=38, value=0, channel=channel))
 
 @server.list_tools()
 async def list_tools() -> list[Tool]:
@@ -801,6 +832,247 @@ async def list_tools() -> list[Tool]:
                     }
                 },
                 "required": ["filter_events"]
+            }
+        ),
+        Tool(
+            name="send_parameter_sweep",
+            description="Smoothly sweep any parameter from one value to another over a specified duration. Works with all parameters including filter, amp, LFO, sample, and FX parameters. Use this for creating dynamic parameter movements like filter sweeps, pitch bends, LFO depth fades, etc.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "parameter": {
+                        "type": "string",
+                        "description": "Parameter name to sweep. Examples: 'filter_cutoff', 'filter_resonance', 'amp_attack', 'lfo1_depth', 'sample_start', 'pitch'. Use list_parameters tool to see all available parameters."
+                    },
+                    "start_value": {
+                        "type": "integer",
+                        "description": "Starting parameter value (0-127)",
+                        "minimum": 0,
+                        "maximum": 127
+                    },
+                    "end_value": {
+                        "type": "integer",
+                        "description": "Ending parameter value (0-127)",
+                        "minimum": 0,
+                        "maximum": 127
+                    },
+                    "duration_sec": {
+                        "type": "number",
+                        "description": "Duration of the sweep in seconds",
+                        "minimum": 0.1
+                    },
+                    "curve": {
+                        "type": "string",
+                        "description": "Sweep curve shape: 'linear' (constant rate), 'exponential' (fast start, slow end), 'logarithmic' (slow start, fast end)",
+                        "enum": ["linear", "exponential", "logarithmic"],
+                        "default": "linear"
+                    },
+                    "steps": {
+                        "type": "integer",
+                        "description": "Number of messages to send (more = smoother). Default is 50.",
+                        "minimum": 2,
+                        "maximum": 200,
+                        "default": 50
+                    },
+                    "channel": {
+                        "type": "integer",
+                        "description": "MIDI channel (1-16). Default is 1.",
+                        "minimum": 1,
+                        "maximum": 16,
+                        "default": 1
+                    }
+                },
+                "required": ["parameter", "start_value", "end_value", "duration_sec"]
+            }
+        ),
+        Tool(
+            name="send_parameter_envelope",
+            description="Apply an ADSR-style envelope to any parameter. Creates organic parameter movements with attack, decay, sustain, and release stages. Great for filter envelopes, amp envelopes, LFO depth modulation, etc.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "parameter": {
+                        "type": "string",
+                        "description": "Parameter name to modulate. Examples: 'filter_cutoff', 'amp_volume', 'lfo1_depth', 'sample_start'."
+                    },
+                    "attack_sec": {
+                        "type": "number",
+                        "description": "Attack time in seconds - time to reach peak (127)",
+                        "minimum": 0.01
+                    },
+                    "decay_sec": {
+                        "type": "number",
+                        "description": "Decay time in seconds - time to drop from peak to sustain level",
+                        "minimum": 0.01
+                    },
+                    "sustain_level": {
+                        "type": "integer",
+                        "description": "Sustain parameter value (0-127)",
+                        "minimum": 0,
+                        "maximum": 127
+                    },
+                    "release_sec": {
+                        "type": "number",
+                        "description": "Release time in seconds - time to return to 0",
+                        "minimum": 0.01
+                    },
+                    "steps_per_stage": {
+                        "type": "integer",
+                        "description": "Number of messages per stage (more = smoother). Default is 20.",
+                        "minimum": 2,
+                        "maximum": 100,
+                        "default": 20
+                    },
+                    "channel": {
+                        "type": "integer",
+                        "description": "MIDI channel (1-16). Default is 1.",
+                        "minimum": 1,
+                        "maximum": 16,
+                        "default": 1
+                    }
+                },
+                "required": ["parameter", "attack_sec", "decay_sec", "sustain_level", "release_sec"]
+            }
+        ),
+        Tool(
+            name="play_pattern_with_parameter_automation",
+            description="Play a pattern with automated parameter changes at specific beats. Supports multiple parameters simultaneously. This is the main tool for creating complex, evolving sounds with filter, amp, LFO, and FX automation. Note: automation is sent in real-time and not saved to Digitakt patterns.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "bars": {
+                        "type": "number",
+                        "description": "Number of bars to play (in 4/4 time). Default is 4 bars.",
+                        "minimum": 0.25,
+                        "default": 4
+                    },
+                    "bpm": {
+                        "type": "number",
+                        "description": "Tempo in beats per minute. Default is 120 BPM.",
+                        "minimum": 20,
+                        "maximum": 300,
+                        "default": 120
+                    },
+                    "track_triggers": {
+                        "type": "array",
+                        "description": "Optional array of [beat, track, velocity] where beat is 0-based quarter note, track is 1-16, velocity is 1-127.",
+                        "items": {
+                            "type": "array",
+                            "minItems": 2,
+                            "maxItems": 3
+                        },
+                        "default": []
+                    },
+                    "parameter_automation": {
+                        "type": "object",
+                        "description": "Object mapping parameter names to arrays of [beat, value] pairs. Example: {'filter_cutoff': [[0, 20], [4, 80]], 'filter_resonance': [[0, 40], [8, 100]], 'lfo1_depth': [[0, 0], [8, 127]]}"
+                    },
+                    "send_clock": {
+                        "type": "boolean",
+                        "description": "Send MIDI Start and Clock messages. Default is true.",
+                        "default": True
+                    },
+                    "send_stop": {
+                        "type": "boolean",
+                        "description": "Send MIDI Stop after duration. Default is true.",
+                        "default": True
+                    },
+                    "channel": {
+                        "type": "integer",
+                        "description": "MIDI channel (1-16). Default is 1.",
+                        "minimum": 1,
+                        "maximum": 16,
+                        "default": 1
+                    }
+                },
+                "required": ["parameter_automation"]
+            }
+        ),
+        Tool(
+            name="save_automation_preset",
+            description=f"Save parameter automation as a reusable JSON preset file. Presets are stored in {PRESET_DIR} and can be loaded later.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "preset_name": {
+                        "type": "string",
+                        "description": "Name for the preset (without .json extension). Example: 'wobble_bass', 'filter_build'"
+                    },
+                    "automation": {
+                        "type": "object",
+                        "description": "Automation data including parameter_automation, bars, bpm, etc."
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Optional description of what this preset does"
+                    }
+                },
+                "required": ["preset_name", "automation"]
+            }
+        ),
+        Tool(
+            name="load_automation_preset",
+            description=f"Load and optionally play a saved automation preset from {PRESET_DIR}.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "preset_name": {
+                        "type": "string",
+                        "description": "Name of the preset to load (without .json extension)"
+                    },
+                    "play": {
+                        "type": "boolean",
+                        "description": "If true, immediately play the loaded preset. Default is false (just load and return the data).",
+                        "default": False
+                    }
+                },
+                "required": ["preset_name"]
+            }
+        ),
+        Tool(
+            name="list_automation_presets",
+            description=f"List all available automation presets stored in {PRESET_DIR}.",
+            inputSchema={
+                "type": "object",
+                "properties": {}
+            }
+        ),
+        Tool(
+            name="export_automation_to_midi",
+            description="Export parameter automation to a standard MIDI file that can be imported into any DAW.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "filename": {
+                        "type": "string",
+                        "description": "Output MIDI filename (will add .mid extension if not present)"
+                    },
+                    "automation": {
+                        "type": "object",
+                        "description": "Automation data including parameter_automation, bars, bpm, etc."
+                    },
+                    "channel": {
+                        "type": "integer",
+                        "description": "MIDI channel (1-16). Default is 1.",
+                        "minimum": 1,
+                        "maximum": 16,
+                        "default": 1
+                    }
+                },
+                "required": ["filename", "automation"]
+            }
+        ),
+        Tool(
+            name="list_parameters",
+            description="List all available parameters that can be automated, organized by category (Filter, Amp, LFO, etc.).",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "category": {
+                        "type": "string",
+                        "description": "Optional: filter by category name. If not specified, shows all categories."
+                    }
+                }
             }
         )
     ]
@@ -1701,6 +1973,403 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 type="text",
                 text=f"Played {bars} bars at {bpm} BPM with {len(track_triggers)} track triggers and {len(filter_events)} filter events {status}"
             )]
+
+        elif name == "send_parameter_sweep":
+            import math
+
+            parameter = arguments["parameter"]
+            start_value = arguments["start_value"]
+            end_value = arguments["end_value"]
+            duration_sec = arguments["duration_sec"]
+            curve = arguments.get("curve", "linear")
+            steps = arguments.get("steps", 50)
+            channel = arguments.get("channel", 1) - 1
+
+            # Validate parameter
+            is_valid, error_msg = validate_parameter(parameter, start_value)
+            if not is_valid:
+                return [TextContent(type="text", text=f"Error: {error_msg}")]
+            is_valid, error_msg = validate_parameter(parameter, end_value)
+            if not is_valid:
+                return [TextContent(type="text", text=f"Error: {error_msg}")]
+
+            # Calculate step interval
+            interval = duration_sec / steps
+
+            # Generate sweep values based on curve type
+            values = []
+            for i in range(steps + 1):
+                t = i / steps
+
+                if curve == "linear":
+                    value = start_value + (end_value - start_value) * t
+                elif curve == "exponential":
+                    value = start_value + (end_value - start_value) * (1 - math.exp(-3 * t))
+                elif curve == "logarithmic":
+                    value = start_value + (end_value - start_value) * math.exp(3 * (t - 1))
+
+                values.append(int(round(value)))
+
+            # Send parameter changes with timing
+            import time
+            start_time = time.time()
+
+            for i, value in enumerate(values):
+                send_parameter_change(parameter, value, channel)
+
+                if i < len(values) - 1:
+                    next_time = start_time + (i + 1) * interval
+                    sleep_duration = next_time - time.time()
+                    if sleep_duration > 0:
+                        await asyncio.sleep(sleep_duration)
+
+            return [TextContent(
+                type="text",
+                text=f"Sent {parameter} sweep from {start_value} to {end_value} over {duration_sec}s ({curve} curve, {steps} steps) on channel {channel+1}"
+            )]
+
+        elif name == "send_parameter_envelope":
+            parameter = arguments["parameter"]
+            attack_sec = arguments["attack_sec"]
+            decay_sec = arguments["decay_sec"]
+            sustain_level = arguments["sustain_level"]
+            release_sec = arguments["release_sec"]
+            steps_per_stage = arguments.get("steps_per_stage", 20)
+            channel = arguments.get("channel", 1) - 1
+
+            # Validate parameter
+            is_valid, error_msg = validate_parameter(parameter, sustain_level)
+            if not is_valid:
+                return [TextContent(type="text", text=f"Error: {error_msg}")]
+
+            # Build envelope stages
+            stages = []
+
+            # Attack: 0 -> 127
+            attack_interval = attack_sec / steps_per_stage
+            for i in range(steps_per_stage + 1):
+                t = i / steps_per_stage
+                value = int(round(127 * t))
+                stages.append((attack_interval, value))
+
+            # Decay: 127 -> sustain_level
+            decay_interval = decay_sec / steps_per_stage
+            for i in range(1, steps_per_stage + 1):
+                t = i / steps_per_stage
+                value = int(round(127 + (sustain_level - 127) * t))
+                stages.append((decay_interval, value))
+
+            # Sustain: hold at sustain_level
+            stages.append((0, sustain_level))
+
+            # Release: sustain_level -> 0
+            release_interval = release_sec / steps_per_stage
+            for i in range(1, steps_per_stage + 1):
+                t = i / steps_per_stage
+                value = int(round(sustain_level * (1 - t)))
+                stages.append((release_interval, value))
+
+            # Send parameter changes with timing
+            import time
+            start_time = time.time()
+            current_time = 0
+
+            for i, (interval, value) in enumerate(stages):
+                send_parameter_change(parameter, value, channel)
+
+                if interval > 0 and i < len(stages) - 1:
+                    current_time += interval
+                    next_time = start_time + current_time
+                    sleep_duration = next_time - time.time()
+                    if sleep_duration > 0:
+                        await asyncio.sleep(sleep_duration)
+
+            total_time = attack_sec + decay_sec + release_sec
+            return [TextContent(
+                type="text",
+                text=f"Sent {parameter} ADSR envelope: A={attack_sec}s D={decay_sec}s S={sustain_level} R={release_sec}s (total {total_time:.2f}s) on channel {channel+1}"
+            )]
+
+        elif name == "play_pattern_with_parameter_automation":
+            bars = arguments.get("bars", 4)
+            bpm = arguments.get("bpm", 120)
+            track_triggers = arguments.get("track_triggers", [])
+            parameter_automation = arguments["parameter_automation"]
+            send_clock = arguments.get("send_clock", True)
+            send_stop = arguments.get("send_stop", True)
+            channel = arguments.get("channel", 1) - 1
+
+            # Validate all parameters
+            for param_name, events in parameter_automation.items():
+                param_info = get_parameter_info(param_name)
+                if not param_info:
+                    return [TextContent(type="text", text=f"Error: Unknown parameter '{param_name}'")]
+                for beat, value in events:
+                    is_valid, error_msg = validate_parameter(param_name, value)
+                    if not is_valid:
+                        return [TextContent(type="text", text=f"Error: {error_msg}")]
+
+            # Calculate timing
+            clock_interval = 60.0 / (bpm * 24)
+            total_pulses = int(bars * 96)
+
+            # Prepare track trigger schedule
+            trigger_schedule = []
+            for trigger in track_triggers:
+                beat = trigger[0]
+                track = trigger[1]
+                velocity = trigger[2] if len(trigger) > 2 else 100
+                pulse_index = int(beat * 24)
+                note = track - 1
+                trigger_schedule.append((pulse_index, note, velocity))
+            trigger_schedule.sort(key=lambda x: x[0])
+
+            # Prepare parameter automation schedules (one per parameter)
+            param_schedules = {}
+            for param_name, events in parameter_automation.items():
+                schedule = []
+                for beat, value in events:
+                    pulse_index = int(beat * 24)
+                    schedule.append((pulse_index, value))
+                schedule.sort(key=lambda x: x[0])
+                param_schedules[param_name] = schedule
+
+            # Send Start if requested
+            if send_clock:
+                output_port.send(mido.Message('start'))
+
+            import time
+            start_time = time.time()
+            trigger_idx = 0
+            param_indices = {param_name: 0 for param_name in param_schedules.keys()}
+
+            # Send clock pulses, triggers, and parameter automation
+            for i in range(total_pulses):
+                # Send clock if requested
+                if send_clock:
+                    output_port.send(mido.Message('clock'))
+
+                # Check for track triggers at this pulse
+                while trigger_idx < len(trigger_schedule) and trigger_schedule[trigger_idx][0] == i:
+                    pulse, note, velocity = trigger_schedule[trigger_idx]
+                    output_port.send(mido.Message('note_on', note=note, velocity=velocity, channel=0))
+                    asyncio.create_task(_delayed_note_off(note, 0.05, 0))
+                    trigger_idx += 1
+
+                # Check for parameter events at this pulse
+                for param_name, schedule in param_schedules.items():
+                    param_idx = param_indices[param_name]
+                    while param_idx < len(schedule) and schedule[param_idx][0] == i:
+                        pulse, value = schedule[param_idx]
+                        send_parameter_change(param_name, value, channel)
+                        param_idx += 1
+                    param_indices[param_name] = param_idx
+
+                # Calculate when next pulse should occur
+                next_pulse_time = start_time + (i + 1) * clock_interval
+                sleep_duration = next_pulse_time - time.time()
+
+                if sleep_duration > 0:
+                    await asyncio.sleep(sleep_duration)
+
+            # Send Stop if requested
+            if send_clock and send_stop:
+                output_port.send(mido.Message('stop'))
+                status = "and stopped"
+            elif send_clock:
+                status = "(still running)"
+            else:
+                status = "(no transport control)"
+
+            total_events = sum(len(events) for events in parameter_automation.values())
+            param_list = ", ".join(parameter_automation.keys())
+            return [TextContent(
+                type="text",
+                text=f"Played {bars} bars at {bpm} BPM with {len(track_triggers)} track triggers and {total_events} parameter events ({param_list}) {status}"
+            )]
+
+        elif name == "save_automation_preset":
+            preset_name = arguments["preset_name"]
+            automation = arguments["automation"]
+            description = arguments.get("description", "")
+
+            # Ensure preset name doesn't have .json extension
+            if preset_name.endswith('.json'):
+                preset_name = preset_name[:-5]
+
+            preset_file = PRESET_DIR / f"{preset_name}.json"
+
+            preset_data = {
+                "name": preset_name,
+                "description": description,
+                "automation": automation
+            }
+
+            with open(preset_file, 'w') as f:
+                json.dump(preset_data, f, indent=2)
+
+            return [TextContent(
+                type="text",
+                text=f"Saved automation preset '{preset_name}' to {preset_file}"
+            )]
+
+        elif name == "load_automation_preset":
+            preset_name = arguments["preset_name"]
+            play = arguments.get("play", False)
+
+            # Ensure preset name doesn't have .json extension
+            if preset_name.endswith('.json'):
+                preset_name = preset_name[:-5]
+
+            preset_file = PRESET_DIR / f"{preset_name}.json"
+
+            if not preset_file.exists():
+                return [TextContent(
+                    type="text",
+                    text=f"Error: Preset '{preset_name}' not found at {preset_file}"
+                )]
+
+            with open(preset_file, 'r') as f:
+                preset_data = json.load(f)
+
+            automation = preset_data.get("automation", {})
+
+            if play:
+                # Play the loaded preset
+                result_text = f"Loaded and playing preset '{preset_name}'\n"
+                result_text += f"Description: {preset_data.get('description', 'N/A')}\n"
+
+                # Call play_pattern_with_parameter_automation recursively
+                play_result = await call_tool("play_pattern_with_parameter_automation", automation)
+                result_text += play_result[0].text
+
+                return [TextContent(type="text", text=result_text)]
+            else:
+                return [TextContent(
+                    type="text",
+                    text=f"Loaded preset '{preset_name}'\nDescription: {preset_data.get('description', 'N/A')}\nAutomation data: {json.dumps(automation, indent=2)}"
+                )]
+
+        elif name == "list_automation_presets":
+            preset_files = list(PRESET_DIR.glob("*.json"))
+
+            if not preset_files:
+                return [TextContent(
+                    type="text",
+                    text=f"No presets found in {PRESET_DIR}"
+                )]
+
+            result = f"Available automation presets ({len(preset_files)}):\n\n"
+
+            for preset_file in sorted(preset_files):
+                try:
+                    with open(preset_file, 'r') as f:
+                        preset_data = json.load(f)
+                    name = preset_data.get("name", preset_file.stem)
+                    description = preset_data.get("description", "No description")
+                    result += f"- {name}: {description}\n"
+                except Exception as e:
+                    result += f"- {preset_file.stem}: (Error loading: {e})\n"
+
+            result += f"\nPresets stored in: {PRESET_DIR}"
+
+            return [TextContent(type="text", text=result)]
+
+        elif name == "export_automation_to_midi":
+            filename = arguments["filename"]
+            automation = arguments["automation"]
+            channel = arguments.get("channel", 1) - 1
+
+            # Ensure filename has .mid extension
+            if not filename.endswith('.mid'):
+                filename += '.mid'
+
+            parameter_automation = automation.get("parameter_automation", {})
+            bars = automation.get("bars", 4)
+            bpm = automation.get("bpm", 120)
+
+            # Create MIDI file
+            mid = mido.MidiFile()
+            track = mido.MidiTrack()
+            mid.tracks.append(track)
+
+            # Set tempo
+            tempo = mido.bpm2tempo(bpm)
+            track.append(mido.MetaMessage('set_tempo', tempo=tempo))
+
+            # Convert parameter automation to MIDI messages
+            # Collect all events with their timing
+            events = []
+
+            for param_name, param_events in parameter_automation.items():
+                param_info = get_parameter_info(param_name)
+                if not param_info:
+                    continue
+
+                for beat, value in param_events:
+                    # Convert beat to ticks (480 ticks per beat is standard)
+                    ticks = int(beat * 480)
+
+                    if param_info["type"] == "cc":
+                        events.append((ticks, 'cc', param_info["cc"], value))
+                    elif param_info["type"] == "nrpn":
+                        events.append((ticks, 'nrpn', param_info["msb"], param_info["lsb"], value))
+
+            # Sort events by time
+            events.sort(key=lambda x: x[0])
+
+            # Add events to track with delta times
+            last_ticks = 0
+            for event in events:
+                if event[1] == 'cc':
+                    ticks, _, cc, value = event
+                    delta = ticks - last_ticks
+                    track.append(mido.Message('control_change', control=cc, value=value, channel=channel, time=delta))
+                    last_ticks = ticks
+                elif event[1] == 'nrpn':
+                    ticks, _, msb, lsb, value = event
+                    delta = ticks - last_ticks
+                    # NRPN requires 4 CC messages
+                    track.append(mido.Message('control_change', control=99, value=msb, channel=channel, time=delta))
+                    track.append(mido.Message('control_change', control=98, value=lsb, channel=channel, time=0))
+                    track.append(mido.Message('control_change', control=6, value=value, channel=channel, time=0))
+                    track.append(mido.Message('control_change', control=38, value=0, channel=channel, time=0))
+                    last_ticks = ticks
+
+            # Save MIDI file
+            mid.save(filename)
+
+            return [TextContent(
+                type="text",
+                text=f"Exported automation to MIDI file: {filename}\nBars: {bars}, BPM: {bpm}, Parameters: {', '.join(parameter_automation.keys())}"
+            )]
+
+        elif name == "list_parameters":
+            category_filter = arguments.get("category")
+
+            categories = get_parameters_by_category()
+
+            if category_filter:
+                if category_filter in categories:
+                    params = categories[category_filter]
+                    result = f"Parameters in category '{category_filter}' ({len(params)}):\n\n"
+                    for param in params:
+                        result += f"- {param}\n"
+                else:
+                    result = f"Error: Unknown category '{category_filter}'\n"
+                    result += f"Available categories: {', '.join(categories.keys())}"
+            else:
+                result = "Available parameters by category:\n\n"
+                for cat_name, params in categories.items():
+                    result += f"{cat_name} ({len(params)}):\n"
+                    for param in params:
+                        result += f"  - {param}\n"
+                    result += "\n"
+
+                result += f"Total: {len(get_all_parameters())} parameters\n"
+                result += f"\nUse 'category' parameter to filter by category."
+
+            return [TextContent(type="text", text=result)]
 
         else:
             return [TextContent(
