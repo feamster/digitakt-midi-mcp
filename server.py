@@ -743,6 +743,45 @@ async def list_tools() -> list[Tool]:
             }
         ),
         Tool(
+            name="send_notes_with_clock_sync",
+            description="Send MIDI notes at specific beat positions with clock sync but NO Start/Stop. Perfect for live recording into Digitakt without the first bar issue. Manually start Digitakt sequencer first, then call this function.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "notes": {
+                        "type": "array",
+                        "description": "Array of [beat, note, velocity, duration] where beat is quarter notes (0, 0.5, 1, 2, etc.)",
+                        "items": {
+                            "type": "array",
+                            "minItems": 4,
+                            "maxItems": 4
+                        }
+                    },
+                    "bpm": {
+                        "type": "number",
+                        "description": "Tempo in beats per minute. Default is 120 BPM.",
+                        "minimum": 20,
+                        "maximum": 300,
+                        "default": 120
+                    },
+                    "channel": {
+                        "type": "integer",
+                        "description": "MIDI channel (1-16). Default is 1.",
+                        "minimum": 1,
+                        "maximum": 16,
+                        "default": 1
+                    },
+                    "bars": {
+                        "type": "number",
+                        "description": "Total duration in bars (4/4 time). Used to determine how long to send clock. Default is 4 bars.",
+                        "minimum": 0.25,
+                        "default": 4
+                    }
+                },
+                "required": ["notes"]
+            }
+        ),
+        Tool(
             name="save_last_melody",
             description="Save the last played melody from play_pattern_with_melody to a MIDI file. The melody is saved with the original tempo and timing.",
             inputSchema={
@@ -1889,6 +1928,73 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             return [TextContent(
                 type="text",
                 text=f"Played {bars} bars at {bpm} BPM with {len(track_triggers)} track triggers and {total_midi_notes} MIDI notes across {num_channels} channels{count_in_info} {status}"
+            )]
+
+        elif name == "send_notes_with_clock_sync":
+            notes = arguments.get("notes", [])
+            bpm = arguments.get("bpm", 120)
+            channel = arguments.get("channel", 1) - 1  # Convert to 0-based
+            bars = arguments.get("bars", 4)
+
+            if not notes:
+                return [TextContent(
+                    type="text",
+                    text="Error: No notes provided"
+                )]
+
+            # Calculate timing
+            beat_duration = 60.0 / bpm
+            clock_interval = beat_duration / 24  # 24 MIDI clock pulses per quarter note
+            total_duration = bars * 4 * beat_duration  # 4 beats per bar
+
+            import time
+            import threading
+
+            start_time = time.time()
+            stop_clock = threading.Event()
+
+            # Clock thread - sends MIDI Clock continuously
+            def send_clock_loop():
+                while not stop_clock.is_set():
+                    if output_port:
+                        output_port.send(mido.Message('clock'))
+                    time.sleep(clock_interval)
+
+            clock_thread = threading.Thread(target=send_clock_loop, daemon=True)
+            clock_thread.start()
+
+            # Schedule all notes
+            def send_note_pair(note_num, velocity, duration, target_time):
+                wait_time = target_time - time.time()
+                if wait_time > 0:
+                    time.sleep(wait_time)
+                if output_port:
+                    output_port.send(mido.Message('note_on', channel=channel, note=note_num, velocity=velocity))
+                    time.sleep(duration)
+                    output_port.send(mido.Message('note_off', channel=channel, note=note_num, velocity=0))
+
+            for note_data in notes:
+                beat = note_data[0]
+                note_num = note_data[1]
+                velocity = note_data[2]
+                duration = note_data[3]
+
+                delay = beat * beat_duration
+                target_time = start_time + delay
+
+                threading.Thread(
+                    target=send_note_pair,
+                    args=(note_num, velocity, duration, target_time),
+                    daemon=True
+                ).start()
+
+            # Wait for pattern to finish
+            time.sleep(total_duration)
+            stop_clock.set()
+
+            return [TextContent(
+                type="text",
+                text=f"Sent {len(notes)} notes with clock sync at {bpm} BPM for {bars} bars (NO Start/Stop)"
             )]
 
         elif name == "save_last_melody":

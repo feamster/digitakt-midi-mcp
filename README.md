@@ -438,6 +438,39 @@ midi_channels: {
 
 **Key feature:** Each MIDI channel can have completely independent note sequences, allowing you to orchestrate multiple instruments from a single function call. All events are precisely timed and synchronized.
 
+### send_notes_with_clock_sync
+Send MIDI notes at specific beat positions with MIDI Clock sync but **NO Start/Stop messages**. Perfect for live recording into Digitakt without the first bar issue.
+
+**Parameters:**
+- `notes` (required): Array of `[beat, note, velocity, duration]` where beat is quarter notes (0, 0.5, 1, 2, etc.)
+- `bpm` (optional): Tempo in beats per minute. Default is 120 BPM.
+- `channel` (optional): MIDI channel (1-16). Default is 1.
+- `bars` (optional): Total duration in bars (4/4 time) for clock sync. Default is 4 bars.
+
+**Examples:**
+```
+4-bar melody for live recording:
+notes: [[0, 60, 85, 0.5], [1, 64, 80, 0.5], [2, 67, 85, 0.5], [3, 71, 80, 0.5], ...]
+bpm: 120
+channel: 1
+bars: 4
+
+8th note pattern:
+notes: [[0, 48, 100, 0.4], [0.5, 50, 95, 0.4], [1, 52, 100, 0.4], [1.5, 50, 95, 0.4], ...]
+bpm: 140
+bars: 2
+```
+
+**Workflow for live recording:**
+1. Manually press PLAY on Digitakt to start sequencer
+2. Arm live recording on Digitakt
+3. Call this function → MIDI Clock + notes sent (NO Start/Stop)
+4. All notes get recorded perfectly, including the first bar!
+
+**Use case:** This is THE solution for live recording MIDI into Digitakt. By not sending MIDI Start/Stop, the Digitakt's live recording buffer stays stable and captures every note including the first bar. Send only MIDI Clock for sync and raw note on/off messages.
+
+**Key difference:** Unlike other functions, this sends NO MIDI Start/Stop/Continue messages - only Clock and notes. This prevents the Digitakt recording buffer from resetting.
+
 ### save_last_melody
 Save the last played melody from `play_pattern_with_melody` to a standard MIDI file. Perfect for capturing generated melodies you like.
 
