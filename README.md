@@ -390,6 +390,45 @@ melody_notes: [[0, 48, 100, 0.5], [2, 52, 90, 0.5], [3.5, 55, 85, 0.3]]  # bassl
 
 **Key feature:** Both track triggers and melody notes are scheduled in the same beat-based timeline, so they can overlap, interleave, and play simultaneously with perfect timing.
 
+### play_pattern_with_multi_channel_midi
+Play patterns with MIDI notes on multiple channels simultaneously. Send drums to Digitakt tracks while also sending MIDI notes to multiple external instruments on different channels all synchronized together.
+
+**Parameters:**
+- `bars` (optional): Number of bars to play in 4/4 time. Default is 4 bars.
+- `bpm` (optional): Tempo in beats per minute. Default is 120 BPM.
+- `track_triggers` (optional): Array of `[beat, track, velocity]` for Digitakt drum tracks where beat is 0-based quarter note, track is 1-16, velocity is 1-127. Default is empty array.
+- `midi_channels` (optional): Dictionary mapping MIDI channel numbers (1-16) to arrays of `[beat, note, velocity, duration]`. Each channel can have independent note sequences. Default is empty object `{}`.
+- `send_clock` (optional): Send MIDI Clock messages for transport sync. Default is true.
+- `midi_start_at_beat` (optional): Beat number (0-based) to send MIDI Start and begin MIDI Clock. When starting mid-sequence (beat > 0), a MIDI Song Position Pointer message is sent before MIDI Start. Default is 0 (immediate start).
+- `send_stop` (optional): Send MIDI Stop after duration. Default is true.
+
+**Examples:**
+```
+Drums on Digitakt + chords on channel 9 + pad melody on channel 12:
+bars: 8
+bpm: 82
+track_triggers: [[0, 1, 105], [2, 2, 95], [4, 1, 105], [6, 2, 95]]  # Digitakt drums
+midi_channels: {
+  "9": [[0, 54, 75, 3.9], [0.01, 57, 75, 3.9], [0.02, 61, 75, 3.9]],  # Chord on channel 9
+  "12": [[0, 69, 70, 1.9], [2, 73, 65, 1.9], [4, 76, 70, 1.9]]  # Pad melody on channel 12
+}
+
+Multi-synth orchestration with count-in:
+bars: 12
+bpm: 120
+midi_start_at_beat: 16  # 4-bar count-in
+track_triggers: [[0,15,100], [1,15,100], ... [15,15,100]]  # Count-in clicks
+midi_channels: {
+  "1": [[16, 48, 100, 0.5], [18, 52, 95, 0.5]],  # Bass on channel 1
+  "2": [[16, 60, 85, 2.0], [20, 64, 85, 2.0]],   # Chords on channel 2
+  "3": [[17, 72, 70, 0.3], [17.5, 74, 65, 0.3]]  # Lead on channel 3
+}
+```
+
+**Use case:** Perfect for hybrid setups where you're using the Digitakt for drums while controlling multiple external synths (hardware or software) on different MIDI channels. All instruments stay perfectly synchronized with MIDI Clock, and you can use delayed start for count-in workflows.
+
+**Key feature:** Each MIDI channel can have completely independent note sequences, allowing you to orchestrate multiple instruments from a single function call. All events are precisely timed and synchronized.
+
 ### save_last_melody
 Save the last played melody from `play_pattern_with_melody` to a standard MIDI file. Perfect for capturing generated melodies you like.
 

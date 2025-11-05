@@ -670,6 +670,67 @@ async def list_tools() -> list[Tool]:
             }
         ),
         Tool(
+            name="play_pattern_with_multi_channel_midi",
+            description="Play patterns with MIDI notes on multiple channels simultaneously. Send drums to Digitakt tracks while also sending MIDI notes to multiple external instruments on different channels (e.g., chords on channel 9, pad melody on channel 12) all synchronized together.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "bars": {
+                        "type": "number",
+                        "description": "Number of bars to play (in 4/4 time). Default is 4 bars.",
+                        "minimum": 0.25,
+                        "default": 4
+                    },
+                    "bpm": {
+                        "type": "number",
+                        "description": "Tempo in beats per minute. Default is 120 BPM.",
+                        "minimum": 20,
+                        "maximum": 300,
+                        "default": 120
+                    },
+                    "track_triggers": {
+                        "type": "array",
+                        "description": "Array of [beat, track, velocity] for Digitakt drum tracks where beat is 0-based quarter note, track is 1-16, velocity is 1-127.",
+                        "items": {
+                            "type": "array",
+                            "minItems": 2,
+                            "maxItems": 3
+                        },
+                        "default": []
+                    },
+                    "midi_channels": {
+                        "type": "object",
+                        "description": "Dictionary mapping MIDI channel numbers (1-16) to arrays of [beat, note, velocity, duration]. Each channel can have independent note sequences. Example: {'9': [[0, 54, 75, 3.9], [0.01, 57, 75, 3.9]], '12': [[0, 69, 70, 1.9], [2, 73, 65, 1.9]]}",
+                        "additionalProperties": {
+                            "type": "array",
+                            "items": {
+                                "type": "array",
+                                "minItems": 2,
+                                "maxItems": 4
+                            }
+                        },
+                        "default": {}
+                    },
+                    "send_clock": {
+                        "type": "boolean",
+                        "description": "Send MIDI Clock messages for transport sync. Default is true.",
+                        "default": True
+                    },
+                    "midi_start_at_beat": {
+                        "type": "number",
+                        "description": "Beat number (0-based) to send MIDI Start and begin MIDI Clock. Before this beat, only note triggers are sent (no transport control). When starting mid-sequence (beat > 0), a MIDI Song Position Pointer message is sent before MIDI Start to ensure the Digitakt sequencer aligns with the correct beat position. Default is 0 (send MIDI Start immediately).",
+                        "minimum": 0,
+                        "default": 0
+                    },
+                    "send_stop": {
+                        "type": "boolean",
+                        "description": "Send MIDI Stop after duration. Default is true.",
+                        "default": True
+                    }
+                }
+            }
+        ),
+        Tool(
             name="save_last_melody",
             description="Save the last played melody from play_pattern_with_melody to a MIDI file. The melody is saved with the original tempo and timing.",
             inputSchema={
@@ -1709,6 +1770,105 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             return [TextContent(
                 type="text",
                 text=f"Played {bars} bars at {bpm} BPM with {len(track_triggers)} track triggers and {len(melody_notes)} melody notes{count_in_info} {status}"
+            )]
+
+        elif name == "play_pattern_with_multi_channel_midi":
+            bars = arguments.get("bars", 4)
+            bpm = arguments.get("bpm", 120)
+            track_triggers = arguments.get("track_triggers", [])
+            midi_channels = arguments.get("midi_channels", {})
+            send_clock = arguments.get("send_clock", True)
+            midi_start_at_beat = arguments.get("midi_start_at_beat", 0)
+            send_stop = arguments.get("send_stop", True)
+
+            # Calculate timing
+            clock_interval = 60.0 / (bpm * 24)
+            beat_duration = 60.0 / bpm
+            total_pulses = int(bars * 96)
+            start_pulse = int(midi_start_at_beat * 24)  # Pulse index for MIDI Start
+
+            # Prepare combined event schedule with all notes from all channels
+            event_schedule = []
+
+            # Add track triggers to schedule (convert track numbers to MIDI notes 0-15)
+            for trigger_data in track_triggers:
+                beat = trigger_data[0]
+                track = trigger_data[1]
+                velocity = trigger_data[2] if len(trigger_data) > 2 else 100
+                pulse_index = int(beat * 24)
+                note = track - 1  # Track 1-16 = note 0-15
+                # Track triggers use channel 0 and default 0.05s duration
+                event_schedule.append(("track", pulse_index, note, velocity, 0.05, 0))
+
+            # Add MIDI notes from each channel
+            total_midi_notes = 0
+            for channel_str, notes in midi_channels.items():
+                channel = int(channel_str) - 1  # Convert to 0-based MIDI channel
+                if channel < 0 or channel > 15:
+                    continue  # Skip invalid channels
+
+                for note_data in notes:
+                    beat = note_data[0]
+                    note = note_data[1]
+                    velocity = note_data[2] if len(note_data) > 2 else 100
+                    duration = note_data[3] if len(note_data) > 3 else 0.1
+                    pulse_index = int(beat * 24)
+                    event_schedule.append(("midi", pulse_index, note, velocity, duration, channel))
+                    total_midi_notes += 1
+
+            # Sort all events by pulse index
+            event_schedule.sort(key=lambda x: x[1])
+
+            import time
+            start_time = time.time()
+            event_idx = 0
+            midi_started = False
+
+            # Process all pulses/beats
+            for i in range(total_pulses):
+                # Check if we should send MIDI Start at this pulse
+                if i == start_pulse and not midi_started:
+                    # Send Song Position Pointer if starting mid-sequence
+                    if midi_start_at_beat > 0:
+                        # SPP is in "MIDI beats" (16th notes), so 1 quarter note = 4 MIDI beats
+                        spp_position = int(midi_start_at_beat * 4)
+                        output_port.send(mido.Message('songpos', pos=spp_position))
+                    output_port.send(mido.Message('start'))
+                    midi_started = True
+
+                # Send MIDI Clock only if we've started and send_clock is True
+                if midi_started and send_clock:
+                    output_port.send(mido.Message('clock'))
+
+                # Check if we need to send any events at this pulse
+                while event_idx < len(event_schedule) and event_schedule[event_idx][1] == i:
+                    event_type, pulse, note, velocity, duration, ch = event_schedule[event_idx]
+                    output_port.send(mido.Message('note_on', note=note, velocity=velocity, channel=ch))
+                    # Schedule note off after duration
+                    asyncio.create_task(_delayed_note_off(note, duration, ch))
+                    event_idx += 1
+
+                # Calculate when next pulse should occur
+                next_pulse_time = start_time + (i + 1) * clock_interval
+                sleep_duration = next_pulse_time - time.time()
+
+                if sleep_duration > 0:
+                    await asyncio.sleep(sleep_duration)
+
+            # Optionally send Stop (only if we actually started)
+            if send_stop and midi_started:
+                output_port.send(mido.Message('stop'))
+                status = "and stopped"
+            elif midi_started:
+                status = "(still running)"
+            else:
+                status = "(no MIDI Start sent - all notes before midi_start_at_beat)"
+
+            num_channels = len(midi_channels)
+            count_in_info = f" (MIDI Start at beat {midi_start_at_beat})" if midi_start_at_beat > 0 else ""
+            return [TextContent(
+                type="text",
+                text=f"Played {bars} bars at {bpm} BPM with {len(track_triggers)} track triggers and {total_midi_notes} MIDI notes across {num_channels} channels{count_in_info} {status}"
             )]
 
         elif name == "save_last_melody":
