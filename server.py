@@ -1722,25 +1722,13 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             event_schedule.sort(key=lambda x: x[1])
 
             import time
+            start_time = time.time()
             event_idx = 0
             midi_started = False
 
-            # Send MIDI Start BEFORE starting the timing loop if starting at beat 0
-            if start_pulse == 0:
-                # Send Song Position Pointer if needed
-                if midi_start_at_beat > 0:
-                    spp_position = int(midi_start_at_beat * 4)
-                    output_port.send(mido.Message('songpos', pos=spp_position))
-                output_port.send(mido.Message('start'))
-                midi_started = True
-                # Small delay to let Digitakt process MIDI Start before first note
-                await asyncio.sleep(0.01)
-
-            start_time = time.time()
-
             # Process all pulses/beats
             for i in range(total_pulses):
-                # Check if we should send MIDI Start at this pulse (for delayed start)
+                # Check if we should send MIDI Start at this pulse
                 if i == start_pulse and not midi_started:
                     # Send Song Position Pointer if starting mid-sequence
                     if midi_start_at_beat > 0:
@@ -1832,25 +1820,13 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             event_schedule.sort(key=lambda x: x[1])
 
             import time
+            start_time = time.time()
             event_idx = 0
             midi_started = False
 
-            # Send MIDI Start BEFORE starting the timing loop if starting at beat 0
-            if start_pulse == 0:
-                # Send Song Position Pointer if needed
-                if midi_start_at_beat > 0:
-                    spp_position = int(midi_start_at_beat * 4)
-                    output_port.send(mido.Message('songpos', pos=spp_position))
-                output_port.send(mido.Message('start'))
-                midi_started = True
-                # Small delay to let Digitakt process MIDI Start before first note
-                await asyncio.sleep(0.01)
-
-            start_time = time.time()
-
             # Process all pulses/beats
             for i in range(total_pulses):
-                # Check if we should send MIDI Start at this pulse (for delayed start)
+                # Check if we should send MIDI Start at this pulse
                 if i == start_pulse and not midi_started:
                     # Send Song Position Pointer if starting mid-sequence
                     if midi_start_at_beat > 0:
