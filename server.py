@@ -661,6 +661,12 @@ async def list_tools() -> list[Tool]:
                         "minimum": 0,
                         "default": 0
                     },
+                    "preroll_bars": {
+                        "type": "number",
+                        "description": "Number of bars to delay melody notes (not track triggers). Track triggers play immediately, melody notes start after preroll. Use for live recording: set preroll_bars to the loop length, arm recording during preroll, then melody notes get recorded. Default is 0 (no preroll).",
+                        "minimum": 0,
+                        "default": 0
+                    },
                     "send_stop": {
                         "type": "boolean",
                         "description": "Send MIDI Stop after duration. Default is true.",
@@ -719,6 +725,12 @@ async def list_tools() -> list[Tool]:
                     "midi_start_at_beat": {
                         "type": "number",
                         "description": "Beat number (0-based) to send MIDI Start and begin MIDI Clock. Before this beat, only note triggers are sent (no transport control). When starting mid-sequence (beat > 0), a MIDI Song Position Pointer message is sent before MIDI Start to ensure the Digitakt sequencer aligns with the correct beat position. Default is 0 (send MIDI Start immediately).",
+                        "minimum": 0,
+                        "default": 0
+                    },
+                    "preroll_bars": {
+                        "type": "number",
+                        "description": "Number of bars to delay MIDI channel notes (not track triggers). Track triggers play immediately, MIDI notes start after preroll. Use for live recording: set preroll_bars to the loop length, arm recording during preroll, then MIDI notes get recorded. Default is 0 (no preroll).",
                         "minimum": 0,
                         "default": 0
                     },
@@ -1687,6 +1699,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             melody_notes = arguments.get("melody_notes", [])
             channel = arguments.get("channel", 1) - 1
             midi_start_at_beat = arguments.get("midi_start_at_beat", 0)
+            preroll_bars = arguments.get("preroll_bars", 0)
             send_stop = arguments.get("send_stop", True)
 
             # Calculate timing
@@ -1694,11 +1707,13 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             beat_duration = 60.0 / bpm
             total_pulses = int(bars * 96)
             start_pulse = int(midi_start_at_beat * 24)  # Pulse index for MIDI Start
+            preroll_beats = preroll_bars * 4  # Convert bars to beats (4/4 time)
 
             # Prepare combined event schedule with all notes
             event_schedule = []
 
             # Add track triggers to schedule (convert track numbers to MIDI notes 0-15)
+            # Track triggers are NOT affected by preroll
             for trigger_data in track_triggers:
                 beat = trigger_data[0]
                 track = trigger_data[1]
@@ -1709,8 +1724,9 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 event_schedule.append(("track", pulse_index, note, velocity, 0.05, 0))
 
             # Add melody notes to schedule
+            # Melody notes ARE delayed by preroll
             for note_data in melody_notes:
-                beat = note_data[0]
+                beat = note_data[0] + preroll_beats  # Add preroll offset
                 note = note_data[1]
                 velocity = note_data[2] if len(note_data) > 2 else 100
                 duration = note_data[3] if len(note_data) > 3 else 0.1
@@ -1779,6 +1795,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             midi_channels = arguments.get("midi_channels", {})
             send_clock = arguments.get("send_clock", True)
             midi_start_at_beat = arguments.get("midi_start_at_beat", 0)
+            preroll_bars = arguments.get("preroll_bars", 0)
             send_stop = arguments.get("send_stop", True)
 
             # Calculate timing
@@ -1786,11 +1803,13 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             beat_duration = 60.0 / bpm
             total_pulses = int(bars * 96)
             start_pulse = int(midi_start_at_beat * 24)  # Pulse index for MIDI Start
+            preroll_beats = preroll_bars * 4  # Convert bars to beats (4/4 time)
 
             # Prepare combined event schedule with all notes from all channels
             event_schedule = []
 
             # Add track triggers to schedule (convert track numbers to MIDI notes 0-15)
+            # Track triggers are NOT affected by preroll
             for trigger_data in track_triggers:
                 beat = trigger_data[0]
                 track = trigger_data[1]
@@ -1801,6 +1820,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 event_schedule.append(("track", pulse_index, note, velocity, 0.05, 0))
 
             # Add MIDI notes from each channel
+            # MIDI notes ARE delayed by preroll
             total_midi_notes = 0
             for channel_str, notes in midi_channels.items():
                 channel = int(channel_str) - 1  # Convert to 0-based MIDI channel
@@ -1808,7 +1828,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                     continue  # Skip invalid channels
 
                 for note_data in notes:
-                    beat = note_data[0]
+                    beat = note_data[0] + preroll_beats  # Add preroll offset
                     note = note_data[1]
                     velocity = note_data[2] if len(note_data) > 2 else 100
                     duration = note_data[3] if len(note_data) > 3 else 0.1

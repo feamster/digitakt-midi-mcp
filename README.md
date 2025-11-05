@@ -361,6 +361,7 @@ Start the Digitakt pattern and play both track triggers AND melody notes simulta
 - `melody_notes` (optional): Array of `[beat, note, velocity, duration]` where beat is 0-based quarter note, note is MIDI note 12-127, velocity is 1-127, duration is in seconds. Default is empty array.
 - `channel` (optional): MIDI channel for melody notes (1-16). Track triggers always use channel 1. Default is 1.
 - `midi_start_at_beat` (optional): Beat number (0-based) to send MIDI Start and begin MIDI Clock. Before this beat, only note triggers are sent (no transport control). When starting mid-sequence (beat > 0), a MIDI Song Position Pointer message is sent before MIDI Start to ensure the Digitakt sequencer aligns with the correct beat position. Default is 0 (send MIDI Start immediately). **Use this for count-in workflows** where you want to arm recording during count-in, then start Digitakt sequencer at a specific beat.
+- `preroll_bars` (optional): Number of bars to delay melody notes (not track triggers). Track triggers play immediately during preroll, melody notes start after preroll. **Use for live recording**: Set preroll_bars to your loop length (e.g., 4 for a 4-bar loop), let drums play during preroll while you arm recording, then melody notes arrive and get recorded perfectly. Default is 0 (no preroll).
 - `send_stop` (optional): Send MIDI Stop after duration. Default is true.
 
 **Examples:**
@@ -376,6 +377,13 @@ midi_start_at_beat: 16  # MIDI Start at beat 16 (bar 5)
 track_triggers: [[0,15,100], [1,15,100], ... [15,15,100]]  # 16 clicks (4 bars)
 melody_notes: [[16, 62, 85, 0.5], [17, 65, 80, 0.5], ...]  # Melody starts at beat 16
 # Workflow: User hears count-in → arms recording → Song Position Pointer + MIDI Start sent → melody recorded in sync
+
+4-bar loop with preroll for live recording (BEST FOR LIVE RECORDING):
+bars: 8  # 4 bars preroll + 4 bars melody
+preroll_bars: 4
+track_triggers: [[0,1,105], [2,2,95], [4,1,105], [6,2,95], ...]  # Drums loop entire 8 bars
+melody_notes: [[0, 60, 85, 0.5], [1, 64, 80, 0.5], ...]  # Melody scheduled for beats 0-15, but will play at 16-31 due to preroll
+# Workflow: Drums start → arm live recording during first 4-bar loop → melody plays second loop → recorded perfectly!
 
 Kick on beats 0, 4, 8, 12 with melody throughout:
 track_triggers: [[0, 1, 100], [4, 1, 100], [8, 1, 100], [12, 1, 100]]
@@ -400,6 +408,7 @@ Play patterns with MIDI notes on multiple channels simultaneously. Send drums to
 - `midi_channels` (optional): Dictionary mapping MIDI channel numbers (1-16) to arrays of `[beat, note, velocity, duration]`. Each channel can have independent note sequences. Default is empty object `{}`.
 - `send_clock` (optional): Send MIDI Clock messages for transport sync. Default is true.
 - `midi_start_at_beat` (optional): Beat number (0-based) to send MIDI Start and begin MIDI Clock. When starting mid-sequence (beat > 0), a MIDI Song Position Pointer message is sent before MIDI Start. Default is 0 (immediate start).
+- `preroll_bars` (optional): Number of bars to delay MIDI channel notes (not track triggers). Track triggers play immediately during preroll, MIDI notes start after preroll. **Use for live recording**: Set preroll_bars to your loop length, let drums play during preroll while you arm recording, then MIDI notes arrive and get recorded perfectly. Default is 0 (no preroll).
 - `send_stop` (optional): Send MIDI Stop after duration. Default is true.
 
 **Examples:**
