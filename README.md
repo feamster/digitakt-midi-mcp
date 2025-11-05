@@ -357,7 +357,7 @@ Start the Digitakt pattern and play both track triggers AND melody notes simulta
 **Parameters:**
 - `bars` (optional): Number of bars to play in 4/4 time. Default is 4 bars.
 - `bpm` (optional): Tempo in beats per minute. Default is 120 BPM.
-- `track_triggers` (optional): Array of `[beat, track, velocity]` where beat is 0-based quarter note, track is 1-16, velocity is 1-127. Default is empty array.
+- `track_triggers` (optional): Array of `[beat, track, velocity]` or `[beat, track, velocity, note]` where beat is 0-based quarter note, track is 1-16, velocity is 1-127, and optional note is MIDI note 0-127 for **chromatic triggering** (if omitted, uses track number for standard triggering). Default is empty array.
 - `melody_notes` (optional): Array of `[beat, note, velocity, duration]` where beat is 0-based quarter note, note is MIDI note 12-127, velocity is 1-127, duration is in seconds. Default is empty array.
 - `channel` (optional): MIDI channel for melody notes (1-16). Track triggers always use channel 1. Default is 1.
 - `midi_start_at_beat` (optional): Beat number (0-based) to send MIDI Start and begin MIDI Clock. Before this beat, only note triggers are sent (no transport control). When starting mid-sequence (beat > 0), a MIDI Song Position Pointer message is sent before MIDI Start to ensure the Digitakt sequencer aligns with the correct beat position. Default is 0 (send MIDI Start immediately). **Use this for count-in workflows** where you want to arm recording during count-in, then start Digitakt sequencer at a specific beat.
@@ -392,6 +392,15 @@ melody_notes: [[0, 60, 85, 0.3], [1, 64, 80, 0.3], [2, 67, 85, 0.3], ...]
 Both track triggers and melody overlapping:
 track_triggers: [[0, 3, 80], [1, 3, 60], [2, 3, 80], [3, 3, 60]]  # hi-hat pattern
 melody_notes: [[0, 48, 100, 0.5], [2, 52, 90, 0.5], [3.5, 55, 85, 0.3]]  # bassline
+
+Chromatic triggering - play Track 13 sample at different pitches:
+track_triggers: [
+  [0, 13, 100, 60],   # Track 13 at C4
+  [1, 13, 90, 64],    # Track 13 at E4
+  [2, 13, 95, 67],    # Track 13 at G4
+  [3, 13, 85, 72]     # Track 13 at C5
+]
+# Note: Track 13 must have chromatic mode enabled on the Digitakt
 ```
 
 **Use case:** Perfect for recording sessions where you want a count-in on one track while recording melody on another. Also great for combining drum hits with melodic parts, or creating complex layered sequences with precise timing control.
@@ -404,7 +413,7 @@ Play patterns with MIDI notes on multiple channels simultaneously. Send drums to
 **Parameters:**
 - `bars` (optional): Number of bars to play in 4/4 time. Default is 4 bars.
 - `bpm` (optional): Tempo in beats per minute. Default is 120 BPM.
-- `track_triggers` (optional): Array of `[beat, track, velocity]` for Digitakt drum tracks where beat is 0-based quarter note, track is 1-16, velocity is 1-127. Default is empty array.
+- `track_triggers` (optional): Array of `[beat, track, velocity]` or `[beat, track, velocity, note]` for Digitakt drum tracks where beat is 0-based quarter note, track is 1-16, velocity is 1-127, and optional note is MIDI note 0-127 for **chromatic triggering** (if omitted, uses track number for standard triggering). Default is empty array.
 - `midi_channels` (optional): Dictionary mapping MIDI channel numbers (1-16) to arrays of `[beat, note, velocity, duration]`. Each channel can have independent note sequences. Default is empty object `{}`.
 - `send_clock` (optional): Send MIDI Clock messages for transport sync. Default is true.
 - `midi_start_at_beat` (optional): Beat number (0-based) to send MIDI Start and begin MIDI Clock. When starting mid-sequence (beat > 0), a MIDI Song Position Pointer message is sent before MIDI Start. Default is 0 (immediate start).

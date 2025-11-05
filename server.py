@@ -630,11 +630,11 @@ async def list_tools() -> list[Tool]:
                     },
                     "track_triggers": {
                         "type": "array",
-                        "description": "Array of [beat, track, velocity] where beat is 0-based quarter note, track is 1-16, velocity is 1-127.",
+                        "description": "Array of [beat, track, velocity] or [beat, track, velocity, note] where beat is 0-based quarter note, track is 1-16, velocity is 1-127, and optional note is MIDI note 0-127 for chromatic triggering (if omitted, uses track number as note for standard triggering).",
                         "items": {
                             "type": "array",
                             "minItems": 2,
-                            "maxItems": 3
+                            "maxItems": 4
                         },
                         "default": []
                     },
@@ -696,11 +696,11 @@ async def list_tools() -> list[Tool]:
                     },
                     "track_triggers": {
                         "type": "array",
-                        "description": "Array of [beat, track, velocity] for Digitakt drum tracks where beat is 0-based quarter note, track is 1-16, velocity is 1-127.",
+                        "description": "Array of [beat, track, velocity] or [beat, track, velocity, note] for Digitakt drum tracks where beat is 0-based quarter note, track is 1-16, velocity is 1-127, and optional note is MIDI note 0-127 for chromatic triggering (if omitted, uses track number as note for standard triggering).",
                         "items": {
                             "type": "array",
                             "minItems": 2,
-                            "maxItems": 3
+                            "maxItems": 4
                         },
                         "default": []
                     },
@@ -1712,14 +1712,18 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             # Prepare combined event schedule with all notes
             event_schedule = []
 
-            # Add track triggers to schedule (convert track numbers to MIDI notes 0-15)
+            # Add track triggers to schedule
             # Track triggers are NOT affected by preroll
             for trigger_data in track_triggers:
                 beat = trigger_data[0]
                 track = trigger_data[1]
                 velocity = trigger_data[2] if len(trigger_data) > 2 else 100
+                # Check if chromatic note is specified (4th parameter)
+                if len(trigger_data) > 3:
+                    note = trigger_data[3]  # Use chromatic note
+                else:
+                    note = track - 1  # Standard: Track 1-16 = note 0-15
                 pulse_index = int(beat * 24)
-                note = track - 1  # Track 1-16 = note 0-15
                 # Track triggers use channel 0 and default 0.05s duration
                 event_schedule.append(("track", pulse_index, note, velocity, 0.05, 0))
 
@@ -1808,14 +1812,18 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             # Prepare combined event schedule with all notes from all channels
             event_schedule = []
 
-            # Add track triggers to schedule (convert track numbers to MIDI notes 0-15)
+            # Add track triggers to schedule
             # Track triggers are NOT affected by preroll
             for trigger_data in track_triggers:
                 beat = trigger_data[0]
                 track = trigger_data[1]
                 velocity = trigger_data[2] if len(trigger_data) > 2 else 100
+                # Check if chromatic note is specified (4th parameter)
+                if len(trigger_data) > 3:
+                    note = trigger_data[3]  # Use chromatic note
+                else:
+                    note = track - 1  # Standard: Track 1-16 = note 0-15
                 pulse_index = int(beat * 24)
-                note = track - 1  # Track 1-16 = note 0-15
                 # Track triggers use channel 0 and default 0.05s duration
                 event_schedule.append(("track", pulse_index, note, velocity, 0.05, 0))
 
