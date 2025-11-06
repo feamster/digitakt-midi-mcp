@@ -466,6 +466,53 @@ filename: "bassline_120bpm.mid"
 
 **Note:** This only works after you've used `play_pattern_with_melody` at least once. The melody is saved with the exact BPM, notes, velocities, and durations from the last playback.
 
+### export_pattern_to_midi
+
+Export a complete Digitakt pattern to a standard MIDI file (.mid). Creates a multi-track MIDI file with drums on channel 1 and melody on a specified channel. Supports chromatic track triggers.
+
+**Parameters:**
+- `filename` (required): Output filename (will add .mid extension if not present)
+- `bpm` (optional): Tempo in beats per minute. Default is 120 BPM.
+- `bars` (optional): Total length in bars (4/4 time). Default is 4 bars.
+- `track_triggers` (optional): Array of `[beat, track, velocity]` or `[beat, track, velocity, note]` for drum/sample triggers
+- `melody_notes` (optional): Array of `[beat, note, velocity, duration]` for melody notes
+- `melody_channel` (optional): MIDI channel for melody notes (1-16). Default is 1.
+
+**Examples:**
+```
+Export a 4-bar drum pattern:
+export_pattern_to_midi(
+  filename="drums.mid",
+  bars=4,
+  bpm=120,
+  track_triggers=[[0, 1, 100], [2, 2, 95], [4, 1, 100], [6, 2, 95]]
+)
+
+Export drums + melody:
+export_pattern_to_midi(
+  filename="full_pattern.mid",
+  bars=8,
+  bpm=140,
+  track_triggers=[[0, 1, 105], [2, 2, 95], [4, 1, 105], [6, 2, 95]],
+  melody_notes=[[0, 60, 85, 0.5], [1, 64, 80, 0.5], [2, 67, 85, 0.5]],
+  melody_channel=2
+)
+
+Export chromatic pad pattern:
+export_pattern_to_midi(
+  filename="pad.mid",
+  bars=4,
+  track_triggers=[
+    [0, 13, 100, 60],   # Track 13 at C4
+    [4, 13, 95, 64],    # Track 13 at E4
+    [8, 13, 100, 67],   # Track 13 at G4
+    [12, 13, 90, 72]    # Track 13 at C5
+  ]
+)
+```
+
+**Use case:** Export patterns for use in DAWs, share with collaborators, archive your work, or import into other hardware sequencers. Unlike `save_melody_to_midi`, this function lets you specify the pattern data directly without needing to play it first.
+
 ### send_sysex
 Send a System Exclusive (SysEx) message to the Digitakt for advanced control and pattern programming.
 

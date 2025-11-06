@@ -1136,6 +1136,60 @@ async def list_tools() -> list[Tool]:
             }
         ),
         Tool(
+            name="export_pattern_to_midi",
+            description="Export a Digitakt pattern to a standard MIDI file (.mid). Creates a multi-track MIDI file with drums on channel 1 and melody on specified channel. Supports chromatic track triggers.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "filename": {
+                        "type": "string",
+                        "description": "Output filename (will add .mid extension if not present)"
+                    },
+                    "bpm": {
+                        "type": "number",
+                        "description": "Tempo in beats per minute. Default is 120 BPM.",
+                        "minimum": 20,
+                        "maximum": 300,
+                        "default": 120
+                    },
+                    "bars": {
+                        "type": "number",
+                        "description": "Total length in bars (4/4 time). Default is 4 bars.",
+                        "minimum": 0.25,
+                        "default": 4
+                    },
+                    "track_triggers": {
+                        "type": "array",
+                        "description": "Array of [beat, track, velocity] or [beat, track, velocity, note] for drum/sample triggers",
+                        "items": {
+                            "type": "array",
+                            "minItems": 2,
+                            "maxItems": 4
+                        },
+                        "default": []
+                    },
+                    "melody_notes": {
+                        "type": "array",
+                        "description": "Array of [beat, note, velocity, duration] for melody notes",
+                        "items": {
+                            "type": "array",
+                            "minItems": 2,
+                            "maxItems": 4
+                        },
+                        "default": []
+                    },
+                    "melody_channel": {
+                        "type": "integer",
+                        "description": "MIDI channel for melody notes (1-16). Default is 1.",
+                        "minimum": 1,
+                        "maximum": 16,
+                        "default": 1
+                    }
+                },
+                "required": ["filename"]
+            }
+        ),
+        Tool(
             name="list_parameters",
             description="List all available parameters that can be automated, organized by category (Filter, Amp, LFO, etc.).",
             inputSchema={
@@ -2531,6 +2585,112 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 type="text",
                 text=f"Exported automation to MIDI file: {filename}\nBars: {bars}, BPM: {bpm}, Parameters: {', '.join(parameter_automation.keys())}"
             )]
+
+        elif name == "export_pattern_to_midi":
+            filename = arguments.get("filename")
+            bpm = arguments.get("bpm", 120)
+            bars = arguments.get("bars", 4)
+            track_triggers = arguments.get("track_triggers", [])
+            melody_notes = arguments.get("melody_notes", [])
+            melody_channel = arguments.get("melody_channel", 1)
+
+            try:
+                if not filename.endswith('.mid'):
+                    filename += '.mid'
+
+                # Create MIDI file
+                mid = mido.MidiFile()
+
+                # Tempo track
+                tempo_track = mido.MidiTrack()
+                mid.tracks.append(tempo_track)
+                tempo_track.append(mido.MetaMessage('set_tempo', tempo=mido.bpm2tempo(bpm)))
+                tempo_track.append(mido.MetaMessage('time_signature', numerator=4, denominator=4))
+
+                # Convert beat duration to ticks (480 ticks per beat is standard)
+                ticks_per_beat = mid.ticks_per_beat
+
+                # Track 1: Drum triggers (on channel 1)
+                if track_triggers:
+                    drum_track = mido.MidiTrack()
+                    mid.tracks.append(drum_track)
+                    drum_track.append(mido.MetaMessage('track_name', name='Digitakt Drums'))
+
+                    # Sort by beat time
+                    sorted_triggers = sorted(track_triggers, key=lambda x: x[0])
+
+                    current_tick = 0
+                    for trigger in sorted_triggers:
+                        beat = trigger[0]
+                        track_num = trigger[1]
+                        velocity = trigger[2]
+
+                        # Check if chromatic (4th parameter is note)
+                        if len(trigger) == 4:
+                            note = trigger[3]  # Use provided note for chromatic
+                        else:
+                            note = track_num - 1  # Track triggers: Track 1 = note 0, etc.
+
+                        # Calculate tick position
+                        tick = int(beat * ticks_per_beat)
+                        delta_time = tick - current_tick
+
+                        # Note on
+                        drum_track.append(mido.Message('note_on', channel=0, note=note, velocity=velocity, time=delta_time))
+                        # Note off (100ms later)
+                        note_off_ticks = int(0.1 * ticks_per_beat * bpm / 60)
+                        drum_track.append(mido.Message('note_off', channel=0, note=note, velocity=0, time=note_off_ticks))
+
+                        current_tick = tick + note_off_ticks
+
+                    # End of track
+                    drum_track.append(mido.MetaMessage('end_of_track', time=0))
+
+                # Track 2: Melody/chords
+                if melody_notes:
+                    melody_track = mido.MidiTrack()
+                    mid.tracks.append(melody_track)
+                    melody_track.append(mido.MetaMessage('track_name', name=f'Melody Ch{melody_channel}'))
+
+                    # Sort by beat time
+                    sorted_notes = sorted(melody_notes, key=lambda x: x[0])
+
+                    current_tick = 0
+                    for note_data in sorted_notes:
+                        beat = note_data[0]
+                        note = note_data[1]
+                        velocity = note_data[2]
+                        duration = note_data[3] if len(note_data) > 3 else 0.5
+
+                        # Calculate tick positions
+                        tick = int(beat * ticks_per_beat)
+                        delta_time = tick - current_tick
+                        duration_ticks = int(duration * ticks_per_beat * bpm / 60)
+
+                        # Note on
+                        melody_track.append(mido.Message('note_on', channel=melody_channel-1, note=note, velocity=velocity, time=delta_time))
+                        # Note off
+                        melody_track.append(mido.Message('note_off', channel=melody_channel-1, note=note, velocity=0, time=duration_ticks))
+
+                        current_tick = tick + duration_ticks
+
+                    # End of track
+                    melody_track.append(mido.MetaMessage('end_of_track', time=0))
+
+                # Save file
+                mid.save(filename)
+
+                track_count = (1 if track_triggers else 0) + (1 if melody_notes else 0)
+                return [TextContent(
+                    type="text",
+                    text=f"Exported pattern to {filename}\n{bars} bars at {bpm} BPM\n{len(track_triggers)} drum triggers, {len(melody_notes)} melody notes\n{track_count} MIDI tracks created"
+                )]
+
+            except Exception as e:
+                return [TextContent(
+                    type="text",
+                    text=f"Error exporting MIDI: {str(e)}"
+                )]
 
         elif name == "list_parameters":
             category_filter = arguments.get("category")
