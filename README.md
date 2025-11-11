@@ -499,13 +499,17 @@ Save the last played pattern from `play_pattern_with_multi_channel_midi` to a st
 **Parameters:**
 - `filename` (required): Filename for the MIDI file (e.g., 'my_pattern.mid'). Will add .mid extension if not present.
 
+**Output Location:** Files are saved to `/mnt/user-data/outputs/`
+
 **Examples:**
 ```
 Save the last pattern after playing it
 filename: "lofi_beat_v1.mid"
+# Saves to: /mnt/user-data/outputs/lofi_beat_v1.mid
 
 Save with descriptive name
 filename: "drums_and_chords_85bpm"  # .mid will be added automatically
+# Saves to: /mnt/user-data/outputs/drums_and_chords_85bpm.mid
 ```
 
 **Use case:** After using `play_pattern_with_multi_channel_midi` to play a complex pattern with drums and multiple MIDI channels, save it to a multi-track MIDI file. Perfect for:

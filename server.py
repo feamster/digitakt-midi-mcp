@@ -2672,6 +2672,12 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             if not filename.endswith('.mid'):
                 filename += '.mid'
 
+            # Save to /mnt/user-data/outputs/
+            import os
+            output_dir = "/mnt/user-data/outputs"
+            os.makedirs(output_dir, exist_ok=True)
+            filepath = os.path.join(output_dir, filename)
+
             try:
                 pattern = last_multi_channel_pattern
                 bpm = pattern['bpm']
@@ -2810,11 +2816,11 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                     track.append(mido.MetaMessage('end_of_track', time=0))
 
                 # Save file
-                mid.save(filename)
+                mid.save(filepath)
 
                 return [TextContent(
                     type="text",
-                    text=f"Saved pattern to {filename}\n{bars} bars at {bpm} BPM\n{len(track_events)} tracks, {total_notes} notes"
+                    text=f"Saved pattern to {filepath}\n{bars} bars at {bpm} BPM\n{len(track_events)} tracks, {total_notes} notes"
                 )]
 
             except Exception as e:
