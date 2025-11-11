@@ -47,6 +47,7 @@ input_port: Optional[mido.ports.BaseInput] = None
 last_melody = None  # Stores: {"bpm": int, "notes": [...], "channel": int}
 last_tracks = None  # Stores: {"bpm": int, "triggers": [...]}
 last_loop = None    # Stores: {"bpm": int, "loop_notes": [...], "loop_length": float, "channel": int}
+last_multi_channel_pattern = None  # Stores: {"bpm": int, "bars": int, "track_triggers": [...], "midi_channels": {...}}
 
 def connect_midi():
     """Connect to Digitakt MIDI ports"""
@@ -751,6 +752,20 @@ async def list_tools() -> list[Tool]:
                     "filename": {
                         "type": "string",
                         "description": "Filename for the MIDI file (e.g., 'my_melody.mid'). Will be saved in the current directory."
+                    }
+                },
+                "required": ["filename"]
+            }
+        ),
+        Tool(
+            name="save_last_pattern",
+            description="Save the last played pattern from play_pattern_with_multi_channel_midi to a standard MIDI file. Saves all track triggers and MIDI channel notes with proper tempo and multi-track format.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "filename": {
+                        "type": "string",
+                        "description": "Filename for the MIDI file (e.g., 'my_pattern.mid'). Will add .mid extension if not present."
                     }
                 },
                 "required": ["filename"]
@@ -1950,6 +1965,15 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             else:
                 status = "(no MIDI Start sent - all notes before midi_start_at_beat)"
 
+            # Store pattern for later saving
+            global last_multi_channel_pattern
+            last_multi_channel_pattern = {
+                "bars": bars,
+                "bpm": bpm,
+                "track_triggers": track_triggers,
+                "midi_channels": midi_channels
+            }
+
             num_channels = len(midi_channels)
             count_in_info = f" (MIDI Start at beat {midi_start_at_beat})" if midi_start_at_beat > 0 else ""
             return [TextContent(
@@ -2589,6 +2613,170 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 type="text",
                 text=f"Exported automation to MIDI file: {filename}\nBars: {bars}, BPM: {bpm}, Parameters: {', '.join(parameter_automation.keys())}"
             )]
+
+        elif name == "save_last_pattern":
+            filename = arguments.get("filename")
+
+            if not last_multi_channel_pattern:
+                return [TextContent(
+                    type="text",
+                    text="Error: No pattern to save. Use play_pattern_with_multi_channel_midi first."
+                )]
+
+            # Add .mid extension if needed
+            if not filename.endswith('.mid'):
+                filename += '.mid'
+
+            try:
+                pattern = last_multi_channel_pattern
+                bpm = pattern['bpm']
+                bars = pattern['bars']
+                track_triggers = pattern['track_triggers']
+                midi_channels = pattern['midi_channels']
+                ticks_per_beat = 480
+
+                def beats_to_ticks(beat):
+                    return int(beat * ticks_per_beat)
+
+                # Create MIDI file
+                mid = mido.MidiFile(ticks_per_beat=ticks_per_beat)
+
+                # Tempo track
+                tempo_track = mido.MidiTrack()
+                mid.tracks.append(tempo_track)
+                tempo = mido.bpm2tempo(bpm)
+                tempo_track.append(mido.MetaMessage('set_tempo', tempo=tempo, time=0))
+                tempo_track.append(mido.MetaMessage('end_of_track', time=0))
+
+                # Organize events by channel
+                track_events = {}  # channel -> list of events
+
+                # Process track triggers (Digitakt tracks 1-16)
+                for trigger in track_triggers:
+                    if len(trigger) >= 3:
+                        beat = trigger[0]
+                        track = trigger[1]
+                        velocity = trigger[2]
+
+                        # Check if chromatic (4th parameter is note)
+                        if len(trigger) == 4:
+                            note = trigger[3]  # Use provided note for chromatic
+                        else:
+                            note = track - 1  # Track triggers: Track 1 = note 0, etc.
+
+                        # Use track number as channel (Track 1 → Ch 0, Track 2 → Ch 1, etc)
+                        channel = track - 1
+                        duration = 0.1  # 100ms duration for triggers
+
+                        if channel not in track_events:
+                            track_events[channel] = []
+
+                        track_events[channel].append({
+                            'type': 'note_on',
+                            'beat': beat,
+                            'note': note,
+                            'velocity': velocity,
+                            'channel': channel
+                        })
+                        track_events[channel].append({
+                            'type': 'note_off',
+                            'beat': beat + duration,
+                            'note': note,
+                            'velocity': 0,
+                            'channel': channel
+                        })
+
+                # Process MIDI channel notes (external synths)
+                for channel_str, notes in midi_channels.items():
+                    channel = int(channel_str) - 1  # Convert to 0-based
+
+                    if channel not in track_events:
+                        track_events[channel] = []
+
+                    for note_data in notes:
+                        if len(note_data) >= 4:
+                            beat, note, velocity, duration = note_data[:4]
+                        elif len(note_data) == 3:
+                            beat, note, velocity = note_data
+                            duration = 0.5
+                        else:
+                            continue
+
+                        track_events[channel].append({
+                            'type': 'note_on',
+                            'beat': beat,
+                            'note': note,
+                            'velocity': velocity,
+                            'channel': channel
+                        })
+                        track_events[channel].append({
+                            'type': 'note_off',
+                            'beat': beat + duration,
+                            'note': note,
+                            'velocity': 0,
+                            'channel': channel
+                        })
+
+                # Create MIDI tracks for each channel
+                track_names = {
+                    0: 'Track 1 (Kick)',
+                    1: 'Track 2 (Snare)',
+                    2: 'Track 3 (Hats)',
+                    8: 'Track 9',
+                    11: 'Track 12',
+                    12: 'Track 13'
+                }
+
+                total_notes = 0
+                for channel in sorted(track_events.keys()):
+                    track = mido.MidiTrack()
+                    mid.tracks.append(track)
+
+                    # Add track name
+                    track_name = track_names.get(channel, f'Channel {channel + 1}')
+                    track.append(mido.MetaMessage('track_name', name=track_name, time=0))
+
+                    # Sort events by beat
+                    events = sorted(track_events[channel], key=lambda x: x['beat'])
+
+                    # Write events with delta times
+                    current_tick = 0
+                    for event in events:
+                        event_tick = beats_to_ticks(event['beat'])
+                        delta = event_tick - current_tick
+
+                        if event['type'] == 'note_on':
+                            track.append(mido.Message('note_on',
+                                                    note=event['note'],
+                                                    velocity=event['velocity'],
+                                                    time=delta,
+                                                    channel=event['channel']))
+                            total_notes += 1
+                        elif event['type'] == 'note_off':
+                            track.append(mido.Message('note_off',
+                                                    note=event['note'],
+                                                    velocity=0,
+                                                    time=delta,
+                                                    channel=event['channel']))
+
+                        current_tick = event_tick
+
+                    # End track
+                    track.append(mido.MetaMessage('end_of_track', time=0))
+
+                # Save file
+                mid.save(filename)
+
+                return [TextContent(
+                    type="text",
+                    text=f"Saved pattern to {filename}\n{bars} bars at {bpm} BPM\n{len(track_events)} tracks, {total_notes} notes"
+                )]
+
+            except Exception as e:
+                return [TextContent(
+                    type="text",
+                    text=f"Error saving pattern: {str(e)}"
+                )]
 
         elif name == "export_pattern_to_midi":
             filename = arguments.get("filename")

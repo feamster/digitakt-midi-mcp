@@ -492,6 +492,37 @@ filename: "bassline_120bpm.mid"
 
 **Note:** This only works after you've used `play_pattern_with_melody` at least once. The melody is saved with the exact BPM, notes, velocities, and durations from the last playback.
 
+### save_last_pattern
+
+Save the last played pattern from `play_pattern_with_multi_channel_midi` to a standard MIDI file. Captures the complete multi-track pattern with all drums and MIDI channel notes.
+
+**Parameters:**
+- `filename` (required): Filename for the MIDI file (e.g., 'my_pattern.mid'). Will add .mid extension if not present.
+
+**Examples:**
+```
+Save the last pattern after playing it
+filename: "lofi_beat_v1.mid"
+
+Save with descriptive name
+filename: "drums_and_chords_85bpm"  # .mid will be added automatically
+```
+
+**Use case:** After using `play_pattern_with_multi_channel_midi` to play a complex pattern with drums and multiple MIDI channels, save it to a multi-track MIDI file. Perfect for:
+- Capturing patterns you created and want to preserve
+- Importing into your DAW for further editing
+- Sharing patterns with collaborators
+- Archiving your work
+
+**What gets saved:**
+- All track triggers (Digitakt tracks 1-16) on their respective MIDI channels
+- All MIDI channel notes (external synths) on their designated channels
+- Tempo and timing information
+- Multi-track MIDI file format (Type 1)
+- Proper track names for easy identification in DAWs
+
+**Note:** This only works after you've used `play_pattern_with_multi_channel_midi` at least once. The pattern is saved with the exact BPM, bars, track triggers, and MIDI channel data from the last playback.
+
 ### export_pattern_to_midi
 
 Export a complete Digitakt pattern to a standard MIDI file (.mid). Creates a multi-track MIDI file with drums on channel 1 and melody on a specified channel. Supports chromatic track triggers.
