@@ -2674,11 +2674,12 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
             # Save to appropriate output directory
             import os
-            # Use /mnt/user-data/outputs/ in Claude Desktop, ./outputs/ locally
+            # Always try /mnt/user-data/outputs/ first (Claude Desktop)
+            # Fall back to ~/Downloads/ if /mnt/user-data doesn't exist (local testing)
             if os.path.exists("/mnt/user-data"):
                 output_dir = "/mnt/user-data/outputs"
             else:
-                output_dir = os.path.join(os.getcwd(), "outputs")
+                output_dir = os.path.expanduser("~/Downloads")
             os.makedirs(output_dir, exist_ok=True)
             filepath = os.path.join(output_dir, filename)
 
