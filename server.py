@@ -923,6 +923,33 @@ async def list_tools() -> list[Tool]:
             }
         ),
         Tool(
+            name="set_parameter",
+            description="Set any parameter to a specific value instantly. Works with all parameters including filter, amp, LFO, sample, and FX parameters. Use this for immediate parameter changes without sweeping.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "parameter": {
+                        "type": "string",
+                        "description": "Parameter name to set. Examples: 'filter_cutoff', 'lfo1_depth', 'amp_volume', 'lfo1_destination'. Use list_parameters tool to see all available parameters."
+                    },
+                    "value": {
+                        "type": "integer",
+                        "description": "Parameter value (0-127)",
+                        "minimum": 0,
+                        "maximum": 127
+                    },
+                    "channel": {
+                        "type": "integer",
+                        "description": "MIDI channel (1-16). IMPORTANT: On Digitakt II, each track has its own MIDI channel. Set this to match the track number you want to control (Track 1 = channel 1, Track 12 = channel 12, etc). Default is 1.",
+                        "minimum": 1,
+                        "maximum": 16,
+                        "default": 1
+                    }
+                },
+                "required": ["parameter", "value"]
+            }
+        ),
+        Tool(
             name="send_parameter_sweep",
             description="Smoothly sweep any parameter from one value to another over a specified duration. Works with all parameters including filter, amp, LFO, sample, and FX parameters. Use this for creating dynamic parameter movements like filter sweeps, pitch bends, LFO depth fades, etc.",
             inputSchema={
@@ -2242,6 +2269,24 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             return [TextContent(
                 type="text",
                 text=f"Played {bars} bars at {bpm} BPM with {len(track_triggers)} track triggers and {len(filter_events)} filter events {status}"
+            )]
+
+        elif name == "set_parameter":
+            parameter = arguments["parameter"]
+            value = arguments["value"]
+            channel = arguments.get("channel", 1) - 1
+
+            # Validate parameter
+            is_valid, error_msg = validate_parameter(parameter, value)
+            if not is_valid:
+                return [TextContent(type="text", text=f"Error: {error_msg}")]
+
+            # Send parameter change
+            send_parameter_change(parameter, value, channel)
+
+            return [TextContent(
+                type="text",
+                text=f"Set {parameter} to {value} on channel {channel + 1}"
             )]
 
         elif name == "send_parameter_sweep":

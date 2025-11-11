@@ -631,6 +631,38 @@ Use the `list_parameters` tool to see all available parameters organized by cate
 - **Track**: level, mute
 - **Trig**: note, velocity, length
 
+### set_parameter
+
+Set any parameter to a specific value instantly. Use this for immediate parameter changes without sweeping or envelopes.
+
+**Parameters:**
+- `parameter` (required): Parameter name (e.g., 'filter_cutoff', 'lfo1_depth', 'amp_volume')
+- `value` (required): Parameter value (0-127)
+- `channel` (optional): MIDI channel (1-16), default 1
+
+**⚠️ IMPORTANT - Channel Routing:**
+On the Digitakt II, each track (1-16) has its own MIDI channel (1-16). To control parameters on a specific track, you MUST set the channel parameter to match the track number:
+- Track 1 parameters → channel 1
+- Track 12 parameters → channel 12
+- etc.
+
+The default channel is 1, which only affects Track 1.
+
+**Examples:**
+```
+Set LFO1 depth to maximum on Track 13
+set_parameter(parameter="lfo1_depth", value=127, channel=13)
+
+Set filter cutoff to middle position on Track 5
+set_parameter(parameter="filter_cutoff", value=64, channel=5)
+
+Set LFO1 destination on Track 12
+set_parameter(parameter="lfo1_destination", value=20, channel=12)
+
+Mute Track 8
+set_parameter(parameter="track_mute", value=1, channel=8)
+```
+
 ### send_parameter_sweep
 
 Smoothly sweep any parameter from one value to another over a specified duration. Perfect for filter sweeps, pitch bends, LFO depth fades, etc.
