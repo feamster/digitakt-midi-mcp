@@ -2672,9 +2672,13 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             if not filename.endswith('.mid'):
                 filename += '.mid'
 
-            # Save to /mnt/user-data/outputs/
+            # Save to appropriate output directory
             import os
-            output_dir = "/mnt/user-data/outputs"
+            # Use /mnt/user-data/outputs/ in Claude Desktop, ./outputs/ locally
+            if os.path.exists("/mnt/user-data"):
+                output_dir = "/mnt/user-data/outputs"
+            else:
+                output_dir = os.path.join(os.getcwd(), "outputs")
             os.makedirs(output_dir, exist_ok=True)
             filepath = os.path.join(output_dir, filename)
 
