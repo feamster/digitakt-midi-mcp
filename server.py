@@ -964,7 +964,7 @@ async def list_tools() -> list[Tool]:
                     },
                     "channel": {
                         "type": "integer",
-                        "description": "MIDI channel (1-16). Default is 1.",
+                        "description": "MIDI channel (1-16). IMPORTANT: On Digitakt II, each track has its own MIDI channel. Set this to match the track number you want to control (Track 1 = channel 1, Track 12 = channel 12, etc). Default is 1.",
                         "minimum": 1,
                         "maximum": 16,
                         "default": 1
@@ -1013,7 +1013,7 @@ async def list_tools() -> list[Tool]:
                     },
                     "channel": {
                         "type": "integer",
-                        "description": "MIDI channel (1-16). Default is 1.",
+                        "description": "MIDI channel (1-16). IMPORTANT: On Digitakt II, each track has its own MIDI channel. Set this to match the track number you want to control (Track 1 = channel 1, Track 12 = channel 12, etc). Default is 1.",
                         "minimum": 1,
                         "maximum": 16,
                         "default": 1
@@ -1067,7 +1067,7 @@ async def list_tools() -> list[Tool]:
                     },
                     "channel": {
                         "type": "integer",
-                        "description": "MIDI channel (1-16). Default is 1.",
+                        "description": "MIDI channel (1-16). IMPORTANT: On Digitakt II, each track has its own MIDI channel. Set this to match the track number you want to control (Track 1 = channel 1, Track 12 = channel 12, etc). Default is 1.",
                         "minimum": 1,
                         "maximum": 16,
                         "default": 1

@@ -644,16 +644,24 @@ Smoothly sweep any parameter from one value to another over a specified duration
 - `steps` (optional): Number of messages to send (more = smoother), default 50
 - `channel` (optional): MIDI channel (1-16), default 1
 
+**⚠️ IMPORTANT - Channel Routing:**
+On the Digitakt II, each track (1-16) has its own MIDI channel (1-16). To control parameters on a specific track, you MUST set the channel parameter to match the track number:
+- Track 1 parameters → channel 1
+- Track 12 parameters → channel 12
+- etc.
+
+The default channel is 1, which only affects Track 1.
+
 **Examples:**
 ```
-Sweep filter cutoff from closed to open over 4 seconds
-send_parameter_sweep(parameter="filter_cutoff", start_value=20, end_value=127, duration_sec=4.0)
+Sweep filter cutoff on Track 1 from closed to open over 4 seconds
+send_parameter_sweep(parameter="filter_cutoff", start_value=20, end_value=127, duration_sec=4.0, channel=1)
 
-Exponential LFO depth fade-in
-send_parameter_sweep(parameter="lfo1_depth", start_value=0, end_value=127, duration_sec=2.0, curve="exponential")
+Exponential LFO depth fade-in on Track 12
+send_parameter_sweep(parameter="lfo1_depth", start_value=0, end_value=127, duration_sec=2.0, curve="exponential", channel=12)
 
-Pitch bend down
-send_parameter_sweep(parameter="pitch", start_value=80, end_value=40, duration_sec=1.5, curve="logarithmic")
+Pitch bend down on Track 5
+send_parameter_sweep(parameter="pitch", start_value=80, end_value=40, duration_sec=1.5, curve="logarithmic", channel=5)
 ```
 
 ### send_parameter_envelope
@@ -669,16 +677,24 @@ Apply an ADSR-style envelope to any parameter. Creates organic parameter movemen
 - `steps_per_stage` (optional): Messages per stage (more = smoother), default 20
 - `channel` (optional): MIDI channel (1-16), default 1
 
+**⚠️ IMPORTANT - Channel Routing:**
+On the Digitakt II, each track (1-16) has its own MIDI channel (1-16). To control parameters on a specific track, you MUST set the channel parameter to match the track number:
+- Track 1 parameters → channel 1
+- Track 12 parameters → channel 12
+- etc.
+
+The default channel is 1, which only affects Track 1.
+
 **Examples:**
 ```
-Filter cutoff envelope (classic filter pluck)
-send_parameter_envelope(parameter="filter_cutoff", attack_sec=0.01, decay_sec=0.5, sustain_level=40, release_sec=1.0)
+Filter cutoff envelope on Track 1 (classic filter pluck)
+send_parameter_envelope(parameter="filter_cutoff", attack_sec=0.01, decay_sec=0.5, sustain_level=40, release_sec=1.0, channel=1)
 
-LFO depth swell
-send_parameter_envelope(parameter="lfo1_depth", attack_sec=2.0, decay_sec=1.0, sustain_level=80, release_sec=2.0)
+LFO depth swell on Track 8
+send_parameter_envelope(parameter="lfo1_depth", attack_sec=2.0, decay_sec=1.0, sustain_level=80, release_sec=2.0, channel=8)
 
-Sample start modulation
-send_parameter_envelope(parameter="sample_start", attack_sec=0.1, decay_sec=0.3, sustain_level=60, release_sec=0.5)
+Sample start modulation on Track 3
+send_parameter_envelope(parameter="sample_start", attack_sec=0.1, decay_sec=0.3, sustain_level=60, release_sec=0.5, channel=3)
 ```
 
 ### play_pattern_with_parameter_automation
@@ -694,12 +710,16 @@ Play a pattern with automated parameter changes at specific beats. This is the m
 - `send_stop` (optional): Send MIDI Stop after duration, default true
 - `channel` (optional): MIDI channel (1-16), default 1
 
+**⚠️ IMPORTANT - Channel Routing:**
+On the Digitakt II, each track (1-16) has its own MIDI channel (1-16). To control parameters on a specific track, you MUST set the channel parameter to match the track number. The default channel is 1, which only affects Track 1.
+
 **Examples:**
 ```
-Multi-parameter filter automation
+Multi-parameter filter automation on Track 12
 play_pattern_with_parameter_automation(
   bars=4,
   bpm=128,
+  channel=12,
   parameter_automation={
     "filter_cutoff": [[0, 20], [4, 80], [8, 127], [12, 60]],
     "filter_resonance": [[0, 40], [8, 100], [16, 40]],
@@ -707,10 +727,11 @@ play_pattern_with_parameter_automation(
   }
 )
 
-Envelope shaping over time
+Envelope shaping over time on Track 5
 play_pattern_with_parameter_automation(
   bars=8,
   bpm=120,
+  channel=5,
   parameter_automation={
     "filter_attack": [[0, 60], [16, 10], [32, 60]],
     "filter_decay": [[0, 100], [16, 30]],
@@ -718,9 +739,11 @@ play_pattern_with_parameter_automation(
   }
 )
 
-LFO modulation build
+LFO modulation build on Track 1 with triggers
 play_pattern_with_parameter_automation(
   bars=4,
+  channel=1,
+  track_triggers=[[0, 1, 100], [4, 1, 100], [8, 1, 100], [12, 1, 100]],
   parameter_automation={
     "lfo1_speed": [[0, 30], [8, 80], [16, 30]],
     "lfo1_depth": [[0, 0], [4, 80], [12, 127]],
