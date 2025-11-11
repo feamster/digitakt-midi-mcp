@@ -45,6 +45,30 @@ pip install -r requirements.txt
 
 3. Make sure your Digitakt II is connected via USB with Overbridge
 
+4. **Configure Digitakt MIDI Settings for Multi-Track Triggering:**
+
+The MCP server sends track triggers on per-track MIDI channels (Track 1 on Channel 1, Track 2 on Channel 2, etc.). To enable simultaneous triggering of multiple tracks, you must configure your Digitakt:
+
+**Settings → MIDI Config → Channels:**
+- **Option A: Per-Track Channels (Recommended for MCP)**
+  - Set each track to its corresponding MIDI channel:
+    - Track 1: Channel 1
+    - Track 2: Channel 2
+    - ...
+    - Track 16: Channel 16
+  - This allows the MCP server to trigger multiple tracks simultaneously
+
+- **Option B: Auto Channel (Simple but Limited)**
+  - Set all tracks to "Auto Channel" (default)
+  - Only the currently selected track will respond to triggers
+  - You cannot trigger multiple tracks simultaneously from the MCP server
+
+**To set per-track channels on Digitakt:**
+1. Press **[FUNC] + [SETTINGS]**
+2. Navigate to **MIDI** → **CONFIG** → **CHANNELS**
+3. For each track (TRK 1-16), set MIDI IN channel to match track number
+4. Save settings
+
 ## Usage
 
 ### Running the Server Manually
@@ -406,6 +430,8 @@ track_triggers: [
 **Use case:** Perfect for recording sessions where you want a count-in on one track while recording melody on another. Also great for combining drum hits with melodic parts, or creating complex layered sequences with precise timing control.
 
 **Key feature:** Both track triggers and melody notes are scheduled in the same beat-based timeline, so they can overlap, interleave, and play simultaneously with perfect timing.
+
+**Important:** Track triggers are sent on per-track MIDI channels (Track 1 → Channel 1, Track 2 → Channel 2, etc.). To trigger multiple tracks simultaneously, configure your Digitakt's MIDI settings to use per-track channels instead of "Auto Channel" (see Installation section for setup instructions).
 
 ### play_pattern_with_multi_channel_midi
 Play patterns with MIDI notes on multiple channels simultaneously. Send drums to Digitakt tracks while also sending MIDI notes to multiple external instruments on different channels all synchronized together.

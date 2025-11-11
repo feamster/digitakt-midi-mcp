@@ -611,7 +611,7 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="play_pattern_with_tracks_and_melody",
-            description="Start the Digitakt pattern and play both track triggers and melody simultaneously. Combines MIDI transport control with both drum triggers and chromatic notes.",
+            description="Start the Digitakt pattern and play both track triggers and melody simultaneously. Combines MIDI transport control with both drum triggers and chromatic notes. Note: Track triggers are sent on per-track MIDI channels (Track 1→Ch1, Track 2→Ch2, etc). Configure Digitakt MIDI channels to match for simultaneous multi-track triggering.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -677,7 +677,7 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="play_pattern_with_multi_channel_midi",
-            description="Play patterns with MIDI notes on multiple channels simultaneously. Send drums to Digitakt tracks while also sending MIDI notes to multiple external instruments on different channels (e.g., chords on channel 9, pad melody on channel 12) all synchronized together.",
+            description="Play patterns with MIDI notes on multiple channels simultaneously. Send drums to Digitakt tracks while also sending MIDI notes to multiple external instruments on different channels (e.g., chords on channel 9, pad melody on channel 12) all synchronized together. Note: Track triggers are sent on per-track MIDI channels (Track 1→Ch1, Track 2→Ch2, etc). Configure Digitakt MIDI channels to match for simultaneous multi-track triggering.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -1778,8 +1778,10 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 else:
                     note = track - 1  # Standard: Track 1-16 = note 0-15
                 pulse_index = int(beat * 24)
-                # Track triggers use channel 0 and default 0.05s duration
-                event_schedule.append(("track", pulse_index, note, velocity, 0.05, 0))
+                # Track triggers use per-track MIDI channel (Track 1 = Channel 1, etc.)
+                # This allows simultaneous triggering of multiple tracks
+                track_channel = track - 1  # Track 1-16 → Channel 0-15 (MIDI channels 1-16)
+                event_schedule.append(("track", pulse_index, note, velocity, 0.05, track_channel))
 
             # Add melody notes to schedule
             # Melody notes ARE delayed by preroll
@@ -1878,8 +1880,10 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 else:
                     note = track - 1  # Standard: Track 1-16 = note 0-15
                 pulse_index = int(beat * 24)
-                # Track triggers use channel 0 and default 0.05s duration
-                event_schedule.append(("track", pulse_index, note, velocity, 0.05, 0))
+                # Track triggers use per-track MIDI channel (Track 1 = Channel 1, etc.)
+                # This allows simultaneous triggering of multiple tracks
+                track_channel = track - 1  # Track 1-16 → Channel 0-15 (MIDI channels 1-16)
+                event_schedule.append(("track", pulse_index, note, velocity, 0.05, track_channel))
 
             # Add MIDI notes from each channel
             # MIDI notes ARE delayed by preroll
