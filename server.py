@@ -2599,6 +2599,10 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             if not filename.endswith('.mid'):
                 filename += '.mid'
 
+            # Use /mnt/user-data/outputs/ for file output
+            output_path = Path("/mnt/user-data/outputs") / filename
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+
             parameter_automation = automation.get("parameter_automation", {})
             bars = automation.get("bars", 4)
             bpm = automation.get("bpm", 120)
@@ -2652,11 +2656,11 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                     last_ticks = ticks
 
             # Save MIDI file
-            mid.save(filename)
+            mid.save(str(output_path))
 
             return [TextContent(
                 type="text",
-                text=f"Exported automation to MIDI file: {filename}\nBars: {bars}, BPM: {bpm}, Parameters: {', '.join(parameter_automation.keys())}"
+                text=f"Exported automation to MIDI file: {output_path}\nBars: {bars}, BPM: {bpm}, Parameters: {', '.join(parameter_automation.keys())}"
             )]
 
         elif name == "save_last_pattern":
