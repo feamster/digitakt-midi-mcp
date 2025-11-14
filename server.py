@@ -742,7 +742,7 @@ async def list_tools() -> list[Tool]:
                     },
                     "parameter_automation": {
                         "type": "object",
-                        "description": "Optional parameter automation mapping parameter names to [beat, value] pairs. Example: {'filter_cutoff': [[0, 20], [4, 80]], 'lfo1_depth': [[0, 0], [8, 127]]}. Supports all Digitakt parameters (filter, amp, LFO, FX, etc.). Use list_parameters tool to see available parameters.",
+                        "description": "Optional parameter automation. Two formats supported: 1) Global: {'filter_cutoff': [[0, 20], [4, 80]]} affects active track. 2) Per-track: {11: {'filter_cutoff': [[0, 20], [4, 80]]}, 13: {'lfo1_depth': [[0, 0], [8, 127]]}} for track-specific automation. Supports all Digitakt parameters (filter, amp, LFO, FX). Use list_parameters to see available parameters.",
                         "default": {}
                     }
                 }
@@ -1906,15 +1906,37 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             preroll_bars = arguments.get("preroll_bars", 0)
             send_stop = arguments.get("send_stop", True)
 
-            # Validate parameter automation
-            for param_name, events in parameter_automation.items():
-                param_info = get_parameter_info(param_name)
-                if not param_info:
-                    return [TextContent(type="text", text=f"Error: Unknown parameter '{param_name}'")]
-                for beat, value in events:
-                    is_valid, error_msg = validate_parameter(param_name, value)
-                    if not is_valid:
-                        return [TextContent(type="text", text=f"Error: {error_msg}")]
+            # Detect parameter automation format and validate
+            # Format 1: {'param_name': [[beat, value], ...]} - global automation
+            # Format 2: {track_num: {'param_name': [[beat, value], ...]}} - per-track automation
+            per_track_automation = False
+            if parameter_automation:
+                # Check if first key is an integer (track number) or string (param name)
+                first_key = next(iter(parameter_automation.keys()))
+                if isinstance(first_key, int):
+                    per_track_automation = True
+                    # Validate per-track format
+                    for track_num, track_params in parameter_automation.items():
+                        if not isinstance(track_params, dict):
+                            return [TextContent(type="text", text=f"Error: Track {track_num} automation must be a dict of parameters")]
+                        for param_name, events in track_params.items():
+                            param_info = get_parameter_info(param_name)
+                            if not param_info:
+                                return [TextContent(type="text", text=f"Error: Unknown parameter '{param_name}' for track {track_num}")]
+                            for beat, value in events:
+                                is_valid, error_msg = validate_parameter(param_name, value)
+                                if not is_valid:
+                                    return [TextContent(type="text", text=f"Error: Track {track_num}: {error_msg}")]
+                else:
+                    # Validate global format
+                    for param_name, events in parameter_automation.items():
+                        param_info = get_parameter_info(param_name)
+                        if not param_info:
+                            return [TextContent(type="text", text=f"Error: Unknown parameter '{param_name}'")]
+                        for beat, value in events:
+                            is_valid, error_msg = validate_parameter(param_name, value)
+                            if not is_valid:
+                                return [TextContent(type="text", text=f"Error: {error_msg}")]
 
             # Calculate timing
             clock_interval = 60.0 / (bpm * 24)
@@ -1963,11 +1985,23 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             # Add parameter automation events
             # Parameter automation is NOT affected by preroll
             total_param_events = 0
-            for param_name, param_events in parameter_automation.items():
-                for beat, value in param_events:
-                    pulse_index = int(beat * 24)
-                    event_schedule.append(("param", pulse_index, param_name, value, 0, 0))
-                    total_param_events += 1
+            if per_track_automation:
+                # Per-track format: {track_num: {'param': [[beat, val], ...]}}
+                for track_num, track_params in parameter_automation.items():
+                    for param_name, param_events in track_params.items():
+                        for beat, value in param_events:
+                            pulse_index = int(beat * 24)
+                            # Store track number in the event
+                            event_schedule.append(("param", pulse_index, param_name, value, track_num, 0))
+                            total_param_events += 1
+            else:
+                # Global format: {'param': [[beat, val], ...]}
+                for param_name, param_events in parameter_automation.items():
+                    for beat, value in param_events:
+                        pulse_index = int(beat * 24)
+                        # No track selection (track_num = 0 means global/active track)
+                        event_schedule.append(("param", pulse_index, param_name, value, 0, 0))
+                        total_param_events += 1
 
             # Sort all events by pulse index
             event_schedule.sort(key=lambda x: x[1])
@@ -1998,10 +2032,21 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                     event_type, pulse, data1, data2, data3, data4 = event_schedule[event_idx]
 
                     if event_type == "param":
-                        # Parameter change event: data1=param_name, data2=value
+                        # Parameter change event: data1=param_name, data2=value, data3=track_num
                         param_name = data1
                         value = data2
-                        send_parameter_change(param_name, value, channel=0)  # Use channel 1 for parameters
+                        track_num = data3
+
+                        # If track_num is specified (per-track automation), send track selection
+                        if track_num > 0:
+                            # Select track using Program Change (pattern 0-127 maps to tracks)
+                            # Actually, Digitakt uses auto-channel mode where each track listens on its own channel
+                            # Track 1 = Channel 0, Track 2 = Channel 1, etc.
+                            track_channel = track_num - 1
+                            send_parameter_change(param_name, value, channel=track_channel)
+                        else:
+                            # Global automation - use channel 0 (Track 1 / Auto channel)
+                            send_parameter_change(param_name, value, channel=0)
                     else:
                         # Note event (track or midi): data1=note, data2=velocity, data3=duration, data4=channel
                         note = data1
@@ -2827,34 +2872,69 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 # Process parameter automation
                 parameter_automation = pattern.get('parameter_automation', {})
                 if parameter_automation:
-                    # Use channel 0 for parameter automation (will be on its own track)
-                    param_channel = 0
-                    if param_channel not in track_events:
-                        track_events[param_channel] = []
+                    # Detect format: global vs per-track
+                    first_key = next(iter(parameter_automation.keys()))
+                    if isinstance(first_key, int):
+                        # Per-track format: {track_num: {'param': [[beat, val], ...]}}
+                        for track_num, track_params in parameter_automation.items():
+                            # Use track-specific channel (Track 1 = Channel 0, etc.)
+                            param_channel = track_num - 1
+                            if param_channel not in track_events:
+                                track_events[param_channel] = []
 
-                    for param_name, param_events in parameter_automation.items():
-                        param_info = get_parameter_info(param_name)
-                        if not param_info:
-                            continue
+                            for param_name, param_events in track_params.items():
+                                param_info = get_parameter_info(param_name)
+                                if not param_info:
+                                    continue
 
-                        for beat, value in param_events:
-                            if param_info["type"] == "cc":
-                                track_events[param_channel].append({
-                                    'type': 'cc',
-                                    'beat': beat,
-                                    'cc': param_info["cc"],
-                                    'value': value,
-                                    'channel': param_channel
-                                })
-                            elif param_info["type"] == "nrpn":
-                                track_events[param_channel].append({
-                                    'type': 'nrpn',
-                                    'beat': beat,
-                                    'msb': param_info["msb"],
-                                    'lsb': param_info["lsb"],
-                                    'value': value,
-                                    'channel': param_channel
-                                })
+                                for beat, value in param_events:
+                                    if param_info["type"] == "cc":
+                                        track_events[param_channel].append({
+                                            'type': 'cc',
+                                            'beat': beat,
+                                            'cc': param_info["cc"],
+                                            'value': value,
+                                            'channel': param_channel
+                                        })
+                                    elif param_info["type"] == "nrpn":
+                                        track_events[param_channel].append({
+                                            'type': 'nrpn',
+                                            'beat': beat,
+                                            'msb': param_info["msb"],
+                                            'lsb': param_info["lsb"],
+                                            'value': value,
+                                            'channel': param_channel
+                                        })
+                    else:
+                        # Global format: {'param': [[beat, val], ...]}
+                        # Use channel 0 for parameter automation
+                        param_channel = 0
+                        if param_channel not in track_events:
+                            track_events[param_channel] = []
+
+                        for param_name, param_events in parameter_automation.items():
+                            param_info = get_parameter_info(param_name)
+                            if not param_info:
+                                continue
+
+                            for beat, value in param_events:
+                                if param_info["type"] == "cc":
+                                    track_events[param_channel].append({
+                                        'type': 'cc',
+                                        'beat': beat,
+                                        'cc': param_info["cc"],
+                                        'value': value,
+                                        'channel': param_channel
+                                    })
+                                elif param_info["type"] == "nrpn":
+                                    track_events[param_channel].append({
+                                        'type': 'nrpn',
+                                        'beat': beat,
+                                        'msb': param_info["msb"],
+                                        'lsb': param_info["lsb"],
+                                        'value': value,
+                                        'channel': param_channel
+                                    })
 
                 # Create MIDI tracks for each channel
                 track_names = {
