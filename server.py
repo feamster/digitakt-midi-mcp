@@ -744,6 +744,12 @@ async def list_tools() -> list[Tool]:
                         "type": "object",
                         "description": "Optional parameter automation. Two formats supported: 1) Global: {'filter_cutoff': [[0, 20], [4, 80]]} affects active track. 2) Per-track: {11: {'filter_cutoff': [[0, 20], [4, 80]]}, 13: {'lfo1_depth': [[0, 0], [8, 127]]}} for track-specific automation. Supports all Digitakt parameters (filter, amp, LFO, FX). Use list_parameters to see available parameters.",
                         "default": {}
+                    },
+                    "automation_loop_bars": {
+                        "type": "number",
+                        "description": "Optional: Loop the parameter automation every N bars. If specified, automation events will repeat at this interval. Example: automation_loop_bars=4 with bars=16 will repeat the 4-bar automation pattern 4 times. Default is 0 (no looping).",
+                        "minimum": 0,
+                        "default": 0
                     }
                 }
             }
@@ -1901,6 +1907,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             track_triggers = arguments.get("track_triggers", [])
             midi_channels = arguments.get("midi_channels", {})
             parameter_automation = arguments.get("parameter_automation", {})
+            automation_loop_bars = arguments.get("automation_loop_bars", 0)
             send_clock = arguments.get("send_clock", True)
             midi_start_at_beat = arguments.get("midi_start_at_beat", 0)
             preroll_bars = arguments.get("preroll_bars", 0)
@@ -2010,6 +2017,29 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                         # No track selection (track_num = 0 means global/active track)
                         event_schedule.append(("param", pulse_index, param_name, value, 0, 0))
                         total_param_events += 1
+
+            # Duplicate automation events if looping is enabled
+            if automation_loop_bars > 0 and total_param_events > 0:
+                # Collect only param events from the first loop cycle
+                loop_beats = automation_loop_bars * 4  # Convert bars to beats
+                loop_pulses = int(loop_beats * 24)
+                total_beats = bars * 4
+
+                # Get param events that occur within the loop period
+                original_param_events = [e for e in event_schedule if e[0] == "param" and e[1] < loop_pulses]
+
+                # Calculate how many times to repeat
+                num_loops = int(total_beats / loop_beats)
+
+                # Duplicate events for each loop cycle (skip first, it's already there)
+                for loop_num in range(1, num_loops):
+                    offset_pulses = loop_num * loop_pulses
+                    for event in original_param_events:
+                        event_type, pulse, param_name, value, track_num, _ = event
+                        new_pulse = pulse + offset_pulses
+                        if new_pulse < total_pulses:  # Don't exceed total duration
+                            event_schedule.append((event_type, new_pulse, param_name, value, track_num, 0))
+                            total_param_events += 1
 
             # Sort all events by pulse index
             event_schedule.sort(key=lambda x: x[1])
