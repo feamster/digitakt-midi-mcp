@@ -739,6 +739,11 @@ async def list_tools() -> list[Tool]:
                         "type": "boolean",
                         "description": "Send MIDI Stop after duration. Default is true.",
                         "default": True
+                    },
+                    "parameter_automation": {
+                        "type": "object",
+                        "description": "Optional parameter automation mapping parameter names to [beat, value] pairs. Example: {'filter_cutoff': [[0, 20], [4, 80]], 'lfo1_depth': [[0, 0], [8, 127]]}. Supports all Digitakt parameters (filter, amp, LFO, FX, etc.). Use list_parameters tool to see available parameters.",
+                        "default": {}
                     }
                 }
             }
@@ -1895,10 +1900,21 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             bpm = arguments.get("bpm", 120)
             track_triggers = arguments.get("track_triggers", [])
             midi_channels = arguments.get("midi_channels", {})
+            parameter_automation = arguments.get("parameter_automation", {})
             send_clock = arguments.get("send_clock", True)
             midi_start_at_beat = arguments.get("midi_start_at_beat", 0)
             preroll_bars = arguments.get("preroll_bars", 0)
             send_stop = arguments.get("send_stop", True)
+
+            # Validate parameter automation
+            for param_name, events in parameter_automation.items():
+                param_info = get_parameter_info(param_name)
+                if not param_info:
+                    return [TextContent(type="text", text=f"Error: Unknown parameter '{param_name}'")]
+                for beat, value in events:
+                    is_valid, error_msg = validate_parameter(param_name, value)
+                    if not is_valid:
+                        return [TextContent(type="text", text=f"Error: {error_msg}")]
 
             # Calculate timing
             clock_interval = 60.0 / (bpm * 24)
@@ -1907,7 +1923,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             start_pulse = int(midi_start_at_beat * 24)  # Pulse index for MIDI Start
             preroll_beats = preroll_bars * 4  # Convert bars to beats (4/4 time)
 
-            # Prepare combined event schedule with all notes from all channels
+            # Prepare combined event schedule with all notes and parameter changes
             event_schedule = []
 
             # Add track triggers to schedule
@@ -1944,6 +1960,15 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                     event_schedule.append(("midi", pulse_index, note, velocity, duration, channel))
                     total_midi_notes += 1
 
+            # Add parameter automation events
+            # Parameter automation is NOT affected by preroll
+            total_param_events = 0
+            for param_name, param_events in parameter_automation.items():
+                for beat, value in param_events:
+                    pulse_index = int(beat * 24)
+                    event_schedule.append(("param", pulse_index, param_name, value, 0, 0))
+                    total_param_events += 1
+
             # Sort all events by pulse index
             event_schedule.sort(key=lambda x: x[1])
 
@@ -1970,10 +1995,23 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
                 # Check if we need to send any events at this pulse
                 while event_idx < len(event_schedule) and event_schedule[event_idx][1] == i:
-                    event_type, pulse, note, velocity, duration, ch = event_schedule[event_idx]
-                    output_port.send(mido.Message('note_on', note=note, velocity=velocity, channel=ch))
-                    # Schedule note off after duration
-                    asyncio.create_task(_delayed_note_off(note, duration, ch))
+                    event_type, pulse, data1, data2, data3, data4 = event_schedule[event_idx]
+
+                    if event_type == "param":
+                        # Parameter change event: data1=param_name, data2=value
+                        param_name = data1
+                        value = data2
+                        send_parameter_change(param_name, value, channel=0)  # Use channel 1 for parameters
+                    else:
+                        # Note event (track or midi): data1=note, data2=velocity, data3=duration, data4=channel
+                        note = data1
+                        velocity = data2
+                        duration = data3
+                        ch = data4
+                        output_port.send(mido.Message('note_on', note=note, velocity=velocity, channel=ch))
+                        # Schedule note off after duration
+                        asyncio.create_task(_delayed_note_off(note, duration, ch))
+
                     event_idx += 1
 
                 # Calculate when next pulse should occur
@@ -1998,14 +2036,16 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 "bars": bars,
                 "bpm": bpm,
                 "track_triggers": track_triggers,
-                "midi_channels": midi_channels
+                "midi_channels": midi_channels,
+                "parameter_automation": parameter_automation
             }
 
             num_channels = len(midi_channels)
             count_in_info = f" (MIDI Start at beat {midi_start_at_beat})" if midi_start_at_beat > 0 else ""
+            param_info = f" and {total_param_events} parameter changes" if total_param_events > 0 else ""
             return [TextContent(
                 type="text",
-                text=f"Played {bars} bars at {bpm} BPM with {len(track_triggers)} track triggers and {total_midi_notes} MIDI notes across {num_channels} channels{count_in_info} {status}"
+                text=f"Played {bars} bars at {bpm} BPM with {len(track_triggers)} track triggers, {total_midi_notes} MIDI notes across {num_channels} channels{param_info}{count_in_info} {status}"
             )]
 
         elif name == "save_last_melody":
@@ -2784,6 +2824,38 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                             'channel': channel
                         })
 
+                # Process parameter automation
+                parameter_automation = pattern.get('parameter_automation', {})
+                if parameter_automation:
+                    # Use channel 0 for parameter automation (will be on its own track)
+                    param_channel = 0
+                    if param_channel not in track_events:
+                        track_events[param_channel] = []
+
+                    for param_name, param_events in parameter_automation.items():
+                        param_info = get_parameter_info(param_name)
+                        if not param_info:
+                            continue
+
+                        for beat, value in param_events:
+                            if param_info["type"] == "cc":
+                                track_events[param_channel].append({
+                                    'type': 'cc',
+                                    'beat': beat,
+                                    'cc': param_info["cc"],
+                                    'value': value,
+                                    'channel': param_channel
+                                })
+                            elif param_info["type"] == "nrpn":
+                                track_events[param_channel].append({
+                                    'type': 'nrpn',
+                                    'beat': beat,
+                                    'msb': param_info["msb"],
+                                    'lsb': param_info["lsb"],
+                                    'value': value,
+                                    'channel': param_channel
+                                })
+
                 # Create MIDI tracks for each channel
                 track_names = {
                     0: 'Track 1 (Kick)',
@@ -2825,6 +2897,18 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                                                     velocity=0,
                                                     time=delta,
                                                     channel=event['channel']))
+                        elif event['type'] == 'cc':
+                            track.append(mido.Message('control_change',
+                                                    control=event['cc'],
+                                                    value=event['value'],
+                                                    time=delta,
+                                                    channel=event['channel']))
+                        elif event['type'] == 'nrpn':
+                            # NRPN requires 4 CC messages
+                            track.append(mido.Message('control_change', control=99, value=event['msb'], time=delta, channel=event['channel']))
+                            track.append(mido.Message('control_change', control=98, value=event['lsb'], time=0, channel=event['channel']))
+                            track.append(mido.Message('control_change', control=6, value=event['value'], time=0, channel=event['channel']))
+                            track.append(mido.Message('control_change', control=38, value=0, time=0, channel=event['channel']))
 
                         current_tick = event_tick
 
@@ -2834,9 +2918,11 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 # Save file
                 mid.save(filepath)
 
+                param_count = sum(len(events) for events in parameter_automation.values()) if parameter_automation else 0
+                param_info = f", {param_count} parameter automation events" if param_count > 0 else ""
                 return [TextContent(
                     type="text",
-                    text=f"Saved pattern to {filepath}\n{bars} bars at {bpm} BPM\n{len(track_events)} tracks, {total_notes} notes"
+                    text=f"Saved pattern to {filepath}\n{bars} bars at {bpm} BPM\n{len(track_events)} tracks, {total_notes} notes{param_info}"
                 )]
 
             except Exception as e:
