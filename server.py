@@ -1911,12 +1911,19 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             # Format 2: {track_num: {'param_name': [[beat, value], ...]}} - per-track automation
             per_track_automation = False
             if parameter_automation:
-                # Check if first key is an integer (track number) or string (param name)
+                # Check if first key is numeric (track number) or parameter name
                 first_key = next(iter(parameter_automation.keys()))
-                if isinstance(first_key, int):
+                # Try to convert to int - if it works, it's per-track format
+                try:
+                    int(first_key)
                     per_track_automation = True
+                except (ValueError, TypeError):
+                    per_track_automation = False
+
+                if per_track_automation:
                     # Validate per-track format
-                    for track_num, track_params in parameter_automation.items():
+                    for track_key, track_params in parameter_automation.items():
+                        track_num = int(track_key)  # Convert string key to int
                         if not isinstance(track_params, dict):
                             return [TextContent(type="text", text=f"Error: Track {track_num} automation must be a dict of parameters")]
                         for param_name, events in track_params.items():
@@ -1987,7 +1994,8 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             total_param_events = 0
             if per_track_automation:
                 # Per-track format: {track_num: {'param': [[beat, val], ...]}}
-                for track_num, track_params in parameter_automation.items():
+                for track_key, track_params in parameter_automation.items():
+                    track_num = int(track_key)  # Convert string key to int
                     for param_name, param_events in track_params.items():
                         for beat, value in param_events:
                             pulse_index = int(beat * 24)
@@ -2874,9 +2882,17 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 if parameter_automation:
                     # Detect format: global vs per-track
                     first_key = next(iter(parameter_automation.keys()))
-                    if isinstance(first_key, int):
+                    # Try to convert to int - if it works, it's per-track format
+                    try:
+                        int(first_key)
+                        is_per_track = True
+                    except (ValueError, TypeError):
+                        is_per_track = False
+
+                    if is_per_track:
                         # Per-track format: {track_num: {'param': [[beat, val], ...]}}
-                        for track_num, track_params in parameter_automation.items():
+                        for track_key, track_params in parameter_automation.items():
+                            track_num = int(track_key)  # Convert string key to int
                             # Use track-specific channel (Track 1 = Channel 0, etc.)
                             param_channel = track_num - 1
                             if param_channel not in track_events:
