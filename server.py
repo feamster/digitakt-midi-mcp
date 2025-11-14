@@ -2599,9 +2599,16 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             if not filename.endswith('.mid'):
                 filename += '.mid'
 
-            # Use /mnt/user-data/outputs/ for file output
-            output_path = Path("/mnt/user-data/outputs") / filename
-            output_path.parent.mkdir(parents=True, exist_ok=True)
+            # Save to appropriate output directory
+            import os
+            # Always try /mnt/user-data/outputs/ first (Claude Desktop)
+            # Fall back to ~/Downloads/ if /mnt/user-data doesn't exist (local testing)
+            if os.path.exists("/mnt/user-data"):
+                output_dir = "/mnt/user-data/outputs"
+            else:
+                output_dir = os.path.expanduser("~/Downloads")
+            os.makedirs(output_dir, exist_ok=True)
+            output_path = os.path.join(output_dir, filename)
 
             parameter_automation = automation.get("parameter_automation", {})
             bars = automation.get("bars", 4)
@@ -2656,7 +2663,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                     last_ticks = ticks
 
             # Save MIDI file
-            mid.save(str(output_path))
+            mid.save(output_path)
 
             return [TextContent(
                 type="text",
