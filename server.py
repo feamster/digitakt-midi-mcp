@@ -742,12 +742,63 @@ async def list_tools() -> list[Tool]:
                     },
                     "parameter_automation": {
                         "type": "object",
-                        "description": "Optional parameter automation. Two formats supported: 1) Global: {'filter_cutoff': [[0, 20], [4, 80]]} affects active track. 2) Per-track: {11: {'filter_cutoff': [[0, 20], [4, 80]]}, 13: {'lfo1_depth': [[0, 0], [8, 127]]}} for track-specific automation. Supports all Digitakt parameters (filter, amp, LFO, FX). Use list_parameters to see available parameters.",
+                        "description": """Optional parameter automation. Automate any Digitakt parameter over time with MIDI CC/NRPN messages.
+
+Two formats supported:
+
+1) GLOBAL format (affects active track):
+   {'filter_cutoff': [[0, 20], [4, 80], [8, 20]]}
+
+2) PER-TRACK format (different automation per track):
+   {
+     "11": {"filter_cutoff": [[0, 20], [8, 127], [16, 20]]},
+     "13": {"lfo1_depth": [[0, 0], [8, 127], [16, 0]]}
+   }
+
+Each parameter is an array of [beat, value] pairs where:
+- beat: Position in beats (0-based, 4 beats per bar)
+- value: Parameter value (0-127)
+
+IMPORTANT: Track numbers in JSON must be strings ("11", "13") not integers.
+
+Example - 4-bar filter sweep on track 11, LFO sweep on track 13:
+{
+  "11": {
+    "filter_cutoff": [[0, 20], [8, 127], [16, 20]]
+  },
+  "13": {
+    "lfo1_depth": [[0, 0], [8, 127], [16, 0]],
+    "lfo1_speed": [[0, 64], [16, 96]]
+  }
+}
+
+Combine with automation_loop_bars to repeat patterns. Use list_parameters to see all available parameters.""",
                         "default": {}
                     },
                     "automation_loop_bars": {
                         "type": "number",
-                        "description": "Optional: Loop the parameter automation every N bars. If specified, automation events will repeat at this interval. Example: automation_loop_bars=4 with bars=16 will repeat the 4-bar automation pattern 4 times. Default is 0 (no looping).",
+                        "description": """Optional: Automatically repeat parameter automation every N bars.
+
+When set, automation events defined in the first N bars will be duplicated at each N-bar interval throughout the total duration.
+
+Example use cases:
+- automation_loop_bars=4 with bars=16: Repeats 4-bar pattern 4 times
+- automation_loop_bars=2 with bars=8: Repeats 2-bar pattern 4 times
+- automation_loop_bars=1 with bars=16: Repeats 1-bar pattern 16 times
+
+Complete example - 4-bar evolving filter sweep repeated over 16 bars:
+{
+  "parameter_automation": {
+    "11": {"filter_cutoff": [[0, 20], [8, 127], [16, 20]]},
+    "13": {"lfo1_depth": [[0, 0], [8, 127], [16, 0]]}
+  },
+  "automation_loop_bars": 4,
+  "bars": 16
+}
+
+This creates smooth filter and LFO sweeps that repeat every 4 bars for the full 16-bar duration.
+
+Default is 0 (no looping - automation plays once).""",
                         "minimum": 0,
                         "default": 0
                     }
