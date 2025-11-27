@@ -26,6 +26,7 @@ class TrackCC:
 class SourceCC:
     """Source/sample CC parameters"""
     TUNE = 16
+    PLAY_MODE = 17
     SAMPLE_SLOT = 19
     SAMPLE_START = 20
     SAMPLE_LENGTH = 21

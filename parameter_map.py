@@ -45,6 +45,7 @@ PARAMETER_MAP = {
     # SOURCE/SAMPLE PARAMETERS
     "tune": {"type": "cc", "cc": SourceCC.TUNE, "range": (0, 127)},
     "pitch": {"type": "cc", "cc": SourceCC.TUNE, "range": (0, 127)},  # Alias
+    "play_mode": {"type": "cc", "cc": SourceCC.PLAY_MODE, "range": (0, 3)},  # 0=Reverse, 1=Reverse Loop, 2=Forward Loop, 3=Forward
     "sample_slot": {"type": "cc", "cc": SourceCC.SAMPLE_SLOT, "range": (0, 127)},
     "sample_start": {"type": "cc", "cc": SourceCC.SAMPLE_START, "range": (0, 127)},
     "sample_length": {"type": "cc", "cc": SourceCC.SAMPLE_LENGTH, "range": (0, 127)},
