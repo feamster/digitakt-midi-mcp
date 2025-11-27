@@ -45,13 +45,13 @@ PARAMETER_MAP = {
     # SOURCE/SAMPLE PARAMETERS
     "tune": {"type": "cc", "cc": SourceCC.TUNE, "range": (0, 127)},
     "pitch": {"type": "cc", "cc": SourceCC.TUNE, "range": (0, 127)},  # Alias
+    "sample_slot": {"type": "cc", "cc": SourceCC.SAMPLE_SLOT, "range": (0, 127)},
+    "sample_start": {"type": "cc", "cc": SourceCC.SAMPLE_START, "range": (0, 127)},
+    "sample_length": {"type": "cc", "cc": SourceCC.SAMPLE_LENGTH, "range": (0, 127)},
+    "sample_loop": {"type": "cc", "cc": SourceCC.SAMPLE_LOOP, "range": (0, 127)},
     "sample_level": {"type": "cc", "cc": SourceCC.SAMPLE_LEVEL, "range": (0, 127)},
+    "sample_bank": {"type": "cc", "cc": SourceCC.SAMPLE_BANK, "range": (0, 127)},
     "fine_tune": {"type": "nrpn", "msb": SourceParams.MSB, "lsb": SourceParams.FINE_TUNE, "range": (0, 127)},
-    "sample_slot": {"type": "nrpn", "msb": SourceParams.MSB, "lsb": SourceParams.SAMPLE_SLOT, "range": (0, 127)},
-    "sample_start": {"type": "nrpn", "msb": SourceParams.MSB, "lsb": SourceParams.SAMPLE_START, "range": (0, 127)},
-    "sample_length": {"type": "nrpn", "msb": SourceParams.MSB, "lsb": SourceParams.SAMPLE_LENGTH, "range": (0, 127)},
-    "sample_loop": {"type": "nrpn", "msb": SourceParams.MSB, "lsb": SourceParams.SAMPLE_LOOP, "range": (0, 127)},
-    "sample_volume": {"type": "nrpn", "msb": SourceParams.MSB, "lsb": SourceParams.SAMPLE_VOLUME, "range": (0, 127)},
 
     # LFO 1 PARAMETERS
     "lfo1_speed": {"type": "nrpn", "msb": LFO1Params.MSB, "lsb": LFO1Params.SPEED, "range": (0, 127)},

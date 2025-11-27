@@ -26,7 +26,12 @@ class TrackCC:
 class SourceCC:
     """Source/sample CC parameters"""
     TUNE = 16
+    SAMPLE_SLOT = 19
+    SAMPLE_START = 20
+    SAMPLE_LENGTH = 21
+    SAMPLE_LOOP = 22
     SAMPLE_LEVEL = 23
+    SAMPLE_BANK = 24
 
 class FilterCC:
     """Filter envelope CC parameters (separate from AMP)"""
@@ -79,17 +84,19 @@ class TrigParams:
     VELOCITY = 1
     LENGTH = 2
 
-# Source Parameters (MSB 1, LSB 0-7)
+# Source Parameters (MSB 1, LSB 0-9)
+# Based on Digitakt II MIDI Implementation (Oneshot machine)
 class SourceParams:
     MSB = 1
     TUNE = 0
     FINE_TUNE = 1
-    SAMPLE_SLOT = 2
-    SAMPLE_START = 3
-    SAMPLE_LENGTH = 4
-    SAMPLE_LOOP = 5
-    SAMPLE_VOLUME = 6
-    SAMPLE_LEVEL = 7
+    # Sample Slot = NRPN LSB 8 (full range 0-16383 across banks)
+    SAMPLE_START = 4    # Also available as CC 20
+    SAMPLE_LENGTH = 5   # Also available as CC 21
+    SAMPLE_LOOP = 6     # Also available as CC 22
+    SAMPLE_LEVEL = 7    # Also available as CC 23
+    SAMPLE_SLOT = 8     # Also available as CC 19
+    SAMPLE_BANK = 9     # Also available as CC 24
 
 # Filter Parameters (MSB 1, LSB 16-23)
 class FilterParams:
