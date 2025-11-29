@@ -413,6 +413,23 @@ async def list_tools() -> list[Tool]:
             }
         ),
         Tool(
+            name="reset_velocities",
+            description="Reset trig velocity to a default value (120) on all 16 tracks. Useful after DAWs like Logic reset velocities to 0 when quitting.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "velocity": {
+                        "type": "integer",
+                        "description": "Velocity value to set on all tracks (0-127). Default is 120.",
+                        "minimum": 0,
+                        "maximum": 127,
+                        "default": 120
+                    }
+                },
+                "required": []
+            }
+        ),
+        Tool(
             name="send_midi_start",
             description="Send MIDI Start message to start the Digitakt's sequencer from the beginning. This is a standard MIDI transport control message.",
             inputSchema={
@@ -1566,6 +1583,24 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             return [TextContent(
                 type="text",
                 text=f"Set trig length to {length} on channel {channel+1}"
+            )]
+
+        elif name == "reset_velocities":
+            velocity = arguments.get("velocity", 120)
+
+            # Set trig velocity on all 16 tracks using NRPN
+            for track in range(1, 17):
+                channel = track - 1  # Track 1 = channel 0, etc.
+
+                # NRPN MSB=3, LSB=1 for trig velocity
+                output_port.send(mido.Message('control_change', control=99, value=3, channel=channel))
+                output_port.send(mido.Message('control_change', control=98, value=1, channel=channel))
+                output_port.send(mido.Message('control_change', control=6, value=velocity, channel=channel))
+                output_port.send(mido.Message('control_change', control=38, value=0, channel=channel))
+
+            return [TextContent(
+                type="text",
+                text=f"Reset velocity to {velocity} on all 16 tracks"
             )]
 
         elif name == "send_midi_start":
