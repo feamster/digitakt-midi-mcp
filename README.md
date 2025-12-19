@@ -619,7 +619,7 @@ The Digitakt MIDI MCP server includes a powerful parameter automation framework 
 
 ### Preset Storage Location
 
-All automation presets are stored in: `~/.digitakt-mcp/presets/`
+All automation presets are stored in: `~/.mcp-config/digitakt/presets/`
 
 This directory is automatically created when the server starts.
 
@@ -814,7 +814,7 @@ save_automation_preset(
 )
 ```
 
-Presets are saved to: `~/.digitakt-mcp/presets/wobble_bass.json`
+Presets are saved to: `~/.mcp-config/digitakt/presets/wobble_bass.json`
 
 ### load_automation_preset
 
@@ -842,7 +842,7 @@ List all available automation presets.
 list_automation_presets()
 ```
 
-Output shows all presets in `~/.digitakt-mcp/presets/` with their descriptions.
+Output shows all presets in `~/.mcp-config/digitakt/presets/` with their descriptions.
 
 ### export_automation_to_midi
 
