@@ -33,7 +33,7 @@ logger = logging.getLogger("digitakt-midi-server")
 DIGITAKT_PORT_NAME = "Elektron Digitakt II"
 
 # Preset directory
-PRESET_DIR = Path.home() / ".digitakt-mcp" / "presets"
+PRESET_DIR = Path.home() / ".mcp-config" / "digitakt" / "presets"
 PRESET_DIR.mkdir(parents=True, exist_ok=True)
 
 # Create server instance
