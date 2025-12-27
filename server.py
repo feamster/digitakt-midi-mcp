@@ -32,9 +32,13 @@ logger = logging.getLogger("digitakt-midi-server")
 # MIDI port name - will be auto-detected
 DIGITAKT_PORT_NAME = "Elektron Digitakt II"
 
-# Preset directory
+# Preset directory (for automation presets)
 PRESET_DIR = Path.home() / ".mcp-config" / "digitakt" / "presets"
 PRESET_DIR.mkdir(parents=True, exist_ok=True)
+
+# Pattern directory (for full patterns)
+PATTERN_DIR = Path.home() / ".mcp-config" / "digitakt" / "patterns"
+PATTERN_DIR.mkdir(parents=True, exist_ok=True)
 
 # Create server instance
 server = Server("digitakt-midi-server")
@@ -1321,6 +1325,228 @@ Default is 0 (no looping - automation plays once).""",
                         "description": "Optional: filter by category name. If not specified, shows all categories."
                     }
                 }
+            }
+        ),
+        # Pattern save/load tools
+        Tool(
+            name="save_pattern",
+            description=f"Save a full pattern (track_triggers + midi_channels + bpm + bars) to a reusable JSON file. Patterns are stored in {PATTERN_DIR}.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "pattern_name": {
+                        "type": "string",
+                        "description": "Name for the pattern (without extension). Example: 'PP-C1', 'funk_beat_01'"
+                    },
+                    "bpm": {
+                        "type": "number",
+                        "description": "Tempo in beats per minute.",
+                        "minimum": 20,
+                        "maximum": 300
+                    },
+                    "bars": {
+                        "type": "number",
+                        "description": "Number of bars in the pattern (4/4 time).",
+                        "minimum": 0.25
+                    },
+                    "track_triggers": {
+                        "type": "array",
+                        "description": "Array of [beat, track, velocity] or [beat, track, velocity, note] for drum/sample triggers.",
+                        "items": {"type": "array"}
+                    },
+                    "midi_channels": {
+                        "type": "object",
+                        "description": "Dict mapping MIDI channel numbers to arrays of [beat, note, velocity, duration]."
+                    },
+                    "parameter_automation": {
+                        "type": "object",
+                        "description": "Optional parameter automation data.",
+                        "default": {}
+                    },
+                    "automation_loop_bars": {
+                        "type": "number",
+                        "description": "Optional: repeat automation every N bars.",
+                        "default": 0
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Optional description of the pattern."
+                    }
+                },
+                "required": ["pattern_name", "bpm", "bars", "track_triggers", "midi_channels"]
+            }
+        ),
+        Tool(
+            name="load_pattern",
+            description=f"Load a saved pattern from {PATTERN_DIR}. Optionally play it immediately.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "pattern_name": {
+                        "type": "string",
+                        "description": "Name of the pattern to load (without .pattern.json extension)"
+                    },
+                    "play": {
+                        "type": "boolean",
+                        "description": "If true, immediately play the pattern. Default is false.",
+                        "default": False
+                    },
+                    "repeat": {
+                        "type": "integer",
+                        "description": "Number of times to repeat the pattern when playing. Default is 1.",
+                        "minimum": 1,
+                        "default": 1
+                    }
+                },
+                "required": ["pattern_name"]
+            }
+        ),
+        Tool(
+            name="list_patterns",
+            description=f"List all saved patterns in {PATTERN_DIR}.",
+            inputSchema={
+                "type": "object",
+                "properties": {}
+            }
+        ),
+        Tool(
+            name="delete_pattern",
+            description=f"Delete a saved pattern from {PATTERN_DIR}.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "pattern_name": {
+                        "type": "string",
+                        "description": "Name of the pattern to delete (without .pattern.json extension)"
+                    }
+                },
+                "required": ["pattern_name"]
+            }
+        ),
+        Tool(
+            name="update_pattern",
+            description="Update specific fields of an existing pattern without rewriting everything. Loads the pattern, merges in provided fields, and saves back.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "pattern_name": {
+                        "type": "string",
+                        "description": "Name of the pattern to update"
+                    },
+                    "bpm": {
+                        "type": "number",
+                        "description": "New tempo (optional)",
+                        "minimum": 20,
+                        "maximum": 300
+                    },
+                    "bars": {
+                        "type": "number",
+                        "description": "New bar count (optional)",
+                        "minimum": 0.25
+                    },
+                    "track_triggers": {
+                        "type": "array",
+                        "description": "New track triggers (optional - replaces all triggers)",
+                        "items": {"type": "array"}
+                    },
+                    "midi_channels": {
+                        "type": "object",
+                        "description": "New MIDI channel data (optional - replaces all channels)"
+                    },
+                    "parameter_automation": {
+                        "type": "object",
+                        "description": "New parameter automation (optional)"
+                    },
+                    "automation_loop_bars": {
+                        "type": "number",
+                        "description": "New automation loop setting (optional)"
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "New description (optional)"
+                    }
+                },
+                "required": ["pattern_name"]
+            }
+        ),
+        Tool(
+            name="edit_pattern_chords",
+            description="Edit chord notes at a specific bar position in a pattern. Updates pad notes across specified MIDI channels and recalculates durations to the next chord change.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "pattern_name": {
+                        "type": "string",
+                        "description": "Name of the pattern to edit"
+                    },
+                    "bar": {
+                        "type": "number",
+                        "description": "Bar position (0-based) where the chord starts"
+                    },
+                    "chord_notes": {
+                        "type": "array",
+                        "description": "Array of MIDI note numbers for the chord (e.g., [48, 52, 55, 60] for C major)",
+                        "items": {"type": "integer", "minimum": 0, "maximum": 127}
+                    },
+                    "channels": {
+                        "type": "array",
+                        "description": "MIDI channels to update. Default is [9, 10, 11, 12].",
+                        "items": {"type": "integer", "minimum": 1, "maximum": 16},
+                        "default": [9, 10, 11, 12]
+                    },
+                    "velocity": {
+                        "type": "integer",
+                        "description": "Velocity for all chord notes. Default is 75.",
+                        "minimum": 1,
+                        "maximum": 127,
+                        "default": 75
+                    }
+                },
+                "required": ["pattern_name", "bar", "chord_notes"]
+            }
+        ),
+        Tool(
+            name="edit_pattern_triggers",
+            description="Add, remove, or replace triggers for a specific track in a pattern. Allows quick edits like 'make the kick half-time' without rewriting the whole pattern.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "pattern_name": {
+                        "type": "string",
+                        "description": "Name of the pattern to edit"
+                    },
+                    "track": {
+                        "type": "integer",
+                        "description": "Track number (1-16) to modify",
+                        "minimum": 1,
+                        "maximum": 16
+                    },
+                    "beats": {
+                        "type": "array",
+                        "description": "Array of beat positions to add/remove/replace",
+                        "items": {"type": "number"}
+                    },
+                    "velocity": {
+                        "type": "integer",
+                        "description": "Velocity for added triggers. Default is 100.",
+                        "minimum": 1,
+                        "maximum": 127,
+                        "default": 100
+                    },
+                    "note": {
+                        "type": "integer",
+                        "description": "Optional MIDI note for chromatic mode (0-127). If omitted, uses standard track triggering.",
+                        "minimum": 0,
+                        "maximum": 127
+                    },
+                    "mode": {
+                        "type": "string",
+                        "enum": ["add", "remove", "replace"],
+                        "description": "'add' inserts new triggers, 'remove' deletes triggers at these beats, 'replace' clears track and adds new triggers. Default is 'add'.",
+                        "default": "add"
+                    }
+                },
+                "required": ["pattern_name", "track", "beats"]
             }
         )
     ]
@@ -2798,6 +3024,379 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             result += f"\nPresets stored in: {PRESET_DIR}"
 
             return [TextContent(type="text", text=result)]
+
+        # Pattern save/load handlers
+        elif name == "save_pattern":
+            pattern_name = arguments["pattern_name"]
+            bpm = arguments["bpm"]
+            bars = arguments["bars"]
+            track_triggers = arguments["track_triggers"]
+            midi_channels = arguments["midi_channels"]
+            parameter_automation = arguments.get("parameter_automation", {})
+            automation_loop_bars = arguments.get("automation_loop_bars", 0)
+            description = arguments.get("description", "")
+
+            # Ensure pattern name doesn't have extension
+            if pattern_name.endswith('.json'):
+                pattern_name = pattern_name[:-5]
+
+            pattern_file = PATTERN_DIR / f"{pattern_name}.json"
+
+            pattern_data = {
+                "name": pattern_name,
+                "description": description,
+                "bpm": bpm,
+                "bars": bars,
+                "track_triggers": track_triggers,
+                "midi_channels": midi_channels,
+                "parameter_automation": parameter_automation,
+                "automation_loop_bars": automation_loop_bars
+            }
+
+            with open(pattern_file, 'w') as f:
+                json.dump(pattern_data, f, indent=2)
+
+            return [TextContent(
+                type="text",
+                text=f"Saved pattern '{pattern_name}' to {pattern_file}\n" +
+                     f"  BPM: {bpm}, Bars: {bars}\n" +
+                     f"  Track triggers: {len(track_triggers)}\n" +
+                     f"  MIDI channels: {list(midi_channels.keys())}"
+            )]
+
+        elif name == "load_pattern":
+            pattern_name = arguments["pattern_name"]
+            play = arguments.get("play", False)
+            repeat = arguments.get("repeat", 1)
+
+            # Ensure pattern name doesn't have extension
+            if pattern_name.endswith('.json'):
+                pattern_name = pattern_name[:-5]
+
+            pattern_file = PATTERN_DIR / f"{pattern_name}.json"
+
+            if not pattern_file.exists():
+                return [TextContent(
+                    type="text",
+                    text=f"Error: Pattern '{pattern_name}' not found at {pattern_file}"
+                )]
+
+            with open(pattern_file, 'r') as f:
+                pattern_data = json.load(f)
+
+            if play:
+                # Play the pattern using play_pattern_with_multi_channel_midi logic
+                bpm = pattern_data.get("bpm", 120)
+                bars = pattern_data.get("bars", 4) * repeat
+                track_triggers = pattern_data.get("track_triggers", [])
+                midi_channels = pattern_data.get("midi_channels", {})
+                parameter_automation = pattern_data.get("parameter_automation", {})
+                automation_loop_bars = pattern_data.get("automation_loop_bars", 0)
+
+                # If repeating, duplicate the triggers and notes
+                if repeat > 1:
+                    original_bars = pattern_data.get("bars", 4)
+                    beats_per_bar = 4
+                    expanded_triggers = list(track_triggers)
+                    expanded_channels = {k: list(v) for k, v in midi_channels.items()}
+
+                    for rep in range(1, repeat):
+                        offset = rep * original_bars * beats_per_bar
+                        # Duplicate track triggers
+                        for trigger in track_triggers:
+                            new_trigger = list(trigger)
+                            new_trigger[0] = trigger[0] + offset
+                            expanded_triggers.append(new_trigger)
+                        # Duplicate MIDI channel notes
+                        for ch, notes in midi_channels.items():
+                            for note in notes:
+                                new_note = list(note)
+                                new_note[0] = note[0] + offset
+                                expanded_channels[ch].append(new_note)
+
+                    track_triggers = expanded_triggers
+                    midi_channels = expanded_channels
+
+                # Store as last pattern for potential MIDI export
+                # (uses global declared earlier in call_tool)
+                last_multi_channel_pattern = {
+                    "bpm": bpm,
+                    "bars": bars,
+                    "track_triggers": track_triggers,
+                    "midi_channels": midi_channels
+                }
+
+                # Build play arguments and call the play handler
+                play_args = {
+                    "bpm": bpm,
+                    "bars": bars,
+                    "track_triggers": track_triggers,
+                    "midi_channels": midi_channels,
+                    "parameter_automation": parameter_automation,
+                    "automation_loop_bars": automation_loop_bars,
+                    "send_clock": True,
+                    "send_stop": True
+                }
+
+                # Call play_pattern_with_multi_channel_midi handler directly
+                result = await call_tool("play_pattern_with_multi_channel_midi", play_args)
+                return [TextContent(
+                    type="text",
+                    text=f"Loaded and played pattern '{pattern_name}' ({repeat}x)\n" +
+                         f"Description: {pattern_data.get('description', 'N/A')}\n" +
+                         result[0].text
+                )]
+            else:
+                # Just return the pattern data
+                return [TextContent(
+                    type="text",
+                    text=f"Loaded pattern '{pattern_name}':\n" +
+                         f"  Description: {pattern_data.get('description', 'N/A')}\n" +
+                         f"  BPM: {pattern_data.get('bpm')}, Bars: {pattern_data.get('bars')}\n" +
+                         f"  Track triggers: {len(pattern_data.get('track_triggers', []))}\n" +
+                         f"  MIDI channels: {list(pattern_data.get('midi_channels', {}).keys())}\n\n" +
+                         f"Pattern data:\n{json.dumps(pattern_data, indent=2)}"
+                )]
+
+        elif name == "list_patterns":
+            pattern_files = list(PATTERN_DIR.glob("*.json"))
+
+            if not pattern_files:
+                return [TextContent(
+                    type="text",
+                    text=f"No patterns found in {PATTERN_DIR}"
+                )]
+
+            result = f"Available patterns ({len(pattern_files)}):\n\n"
+
+            for pattern_file in sorted(pattern_files):
+                try:
+                    with open(pattern_file, 'r') as f:
+                        pattern_data = json.load(f)
+                    pname = pattern_data.get("name", pattern_file.stem)
+                    desc = pattern_data.get("description", "No description")
+                    bpm = pattern_data.get("bpm", "?")
+                    bars = pattern_data.get("bars", "?")
+                    num_triggers = len(pattern_data.get("track_triggers", []))
+                    channels = list(pattern_data.get("midi_channels", {}).keys())
+                    result += f"- {pname}: {desc}\n"
+                    result += f"    BPM: {bpm}, Bars: {bars}, Triggers: {num_triggers}, Channels: {channels}\n"
+                except Exception as e:
+                    result += f"- {pattern_file.stem}: (Error loading: {e})\n"
+
+            result += f"\nPatterns stored in: {PATTERN_DIR}"
+            return [TextContent(type="text", text=result)]
+
+        elif name == "delete_pattern":
+            pattern_name = arguments["pattern_name"]
+
+            # Ensure pattern name doesn't have extension
+            if pattern_name.endswith('.json'):
+                pattern_name = pattern_name[:-5]
+
+            pattern_file = PATTERN_DIR / f"{pattern_name}.json"
+
+            if not pattern_file.exists():
+                return [TextContent(
+                    type="text",
+                    text=f"Error: Pattern '{pattern_name}' not found at {pattern_file}"
+                )]
+
+            pattern_file.unlink()
+            return [TextContent(
+                type="text",
+                text=f"Deleted pattern '{pattern_name}'"
+            )]
+
+        elif name == "update_pattern":
+            pattern_name = arguments["pattern_name"]
+
+            # Ensure pattern name doesn't have extension
+            if pattern_name.endswith('.json'):
+                pattern_name = pattern_name[:-5]
+
+            pattern_file = PATTERN_DIR / f"{pattern_name}.json"
+
+            if not pattern_file.exists():
+                return [TextContent(
+                    type="text",
+                    text=f"Error: Pattern '{pattern_name}' not found at {pattern_file}"
+                )]
+
+            # Load existing pattern
+            with open(pattern_file, 'r') as f:
+                pattern_data = json.load(f)
+
+            # Update only provided fields
+            updated_fields = []
+            for field in ["bpm", "bars", "track_triggers", "midi_channels",
+                          "parameter_automation", "automation_loop_bars", "description"]:
+                if field in arguments:
+                    pattern_data[field] = arguments[field]
+                    updated_fields.append(field)
+
+            # Save back
+            with open(pattern_file, 'w') as f:
+                json.dump(pattern_data, f, indent=2)
+
+            return [TextContent(
+                type="text",
+                text=f"Updated pattern '{pattern_name}':\n  Modified fields: {', '.join(updated_fields)}"
+            )]
+
+        elif name == "edit_pattern_chords":
+            pattern_name = arguments["pattern_name"]
+            bar = arguments["bar"]
+            chord_notes = arguments["chord_notes"]
+            channels = arguments.get("channels", [9, 10, 11, 12])
+            velocity = arguments.get("velocity", 75)
+
+            # Ensure pattern name doesn't have extension
+            if pattern_name.endswith('.json'):
+                pattern_name = pattern_name[:-5]
+
+            pattern_file = PATTERN_DIR / f"{pattern_name}.json"
+
+            if not pattern_file.exists():
+                return [TextContent(
+                    type="text",
+                    text=f"Error: Pattern '{pattern_name}' not found at {pattern_file}"
+                )]
+
+            # Load existing pattern
+            with open(pattern_file, 'r') as f:
+                pattern_data = json.load(f)
+
+            midi_channels = pattern_data.get("midi_channels", {})
+            total_bars = pattern_data.get("bars", 4)
+            beat_position = bar * 4  # Convert bar to beat (4 beats per bar)
+
+            # Find the next chord change position (for duration calculation)
+            # Look for notes in the same channels that start after this position
+            next_chord_beat = total_bars * 4  # Default to end of pattern
+            for ch_str in [str(ch) for ch in channels]:
+                if ch_str in midi_channels:
+                    for note_data in midi_channels[ch_str]:
+                        note_beat = note_data[0]
+                        if note_beat > beat_position:
+                            next_chord_beat = min(next_chord_beat, note_beat)
+
+            duration = next_chord_beat - beat_position - 0.1  # Slightly less than full duration
+            if duration < 0.1:
+                duration = 0.1
+
+            # Remove existing notes at this beat position for these channels
+            for ch in channels:
+                ch_str = str(ch)
+                if ch_str in midi_channels:
+                    midi_channels[ch_str] = [
+                        n for n in midi_channels[ch_str]
+                        if abs(n[0] - beat_position) > 0.01  # Keep notes not at this position
+                    ]
+                else:
+                    midi_channels[ch_str] = []
+
+            # Add new chord notes - distribute across channels
+            for i, note in enumerate(chord_notes):
+                if i < len(channels):
+                    ch_str = str(channels[i])
+                    # Small offset for slight strum effect
+                    offset = i * 0.01
+                    midi_channels[ch_str].append([beat_position + offset, note, velocity, duration])
+
+            # Sort notes in each channel by beat
+            for ch_str in midi_channels:
+                midi_channels[ch_str].sort(key=lambda x: x[0])
+
+            pattern_data["midi_channels"] = midi_channels
+
+            # Save back
+            with open(pattern_file, 'w') as f:
+                json.dump(pattern_data, f, indent=2)
+
+            return [TextContent(
+                type="text",
+                text=f"Updated chord at bar {bar} in pattern '{pattern_name}':\n" +
+                     f"  Notes: {chord_notes}\n" +
+                     f"  Channels: {channels}\n" +
+                     f"  Duration: {duration:.2f} beats"
+            )]
+
+        elif name == "edit_pattern_triggers":
+            pattern_name = arguments["pattern_name"]
+            track = arguments["track"]
+            beats = arguments["beats"]
+            velocity = arguments.get("velocity", 100)
+            note = arguments.get("note")  # Optional chromatic note
+            mode = arguments.get("mode", "add")
+
+            # Ensure pattern name doesn't have extension
+            if pattern_name.endswith('.json'):
+                pattern_name = pattern_name[:-5]
+
+            pattern_file = PATTERN_DIR / f"{pattern_name}.json"
+
+            if not pattern_file.exists():
+                return [TextContent(
+                    type="text",
+                    text=f"Error: Pattern '{pattern_name}' not found at {pattern_file}"
+                )]
+
+            # Load existing pattern
+            with open(pattern_file, 'r') as f:
+                pattern_data = json.load(f)
+
+            track_triggers = pattern_data.get("track_triggers", [])
+
+            if mode == "replace":
+                # Remove all triggers for this track
+                track_triggers = [t for t in track_triggers if t[1] != track]
+                # Add new triggers
+                for beat in beats:
+                    if note is not None:
+                        track_triggers.append([beat, track, velocity, note])
+                    else:
+                        track_triggers.append([beat, track, velocity])
+                action = f"Replaced track {track} triggers"
+
+            elif mode == "remove":
+                # Remove triggers at specified beats for this track
+                beats_set = set(beats)
+                original_count = len([t for t in track_triggers if t[1] == track])
+                track_triggers = [
+                    t for t in track_triggers
+                    if not (t[1] == track and t[0] in beats_set)
+                ]
+                removed_count = original_count - len([t for t in track_triggers if t[1] == track])
+                action = f"Removed {removed_count} triggers from track {track}"
+
+            else:  # mode == "add"
+                # Add new triggers (avoiding duplicates)
+                existing_beats = set(t[0] for t in track_triggers if t[1] == track)
+                added = 0
+                for beat in beats:
+                    if beat not in existing_beats:
+                        if note is not None:
+                            track_triggers.append([beat, track, velocity, note])
+                        else:
+                            track_triggers.append([beat, track, velocity])
+                        added += 1
+                action = f"Added {added} triggers to track {track}"
+
+            # Sort by beat
+            track_triggers.sort(key=lambda x: x[0])
+            pattern_data["track_triggers"] = track_triggers
+
+            # Save back
+            with open(pattern_file, 'w') as f:
+                json.dump(pattern_data, f, indent=2)
+
+            track_count = len([t for t in track_triggers if t[1] == track])
+            return [TextContent(
+                type="text",
+                text=f"{action} in pattern '{pattern_name}'\n" +
+                     f"  Track {track} now has {track_count} triggers"
+            )]
 
         elif name == "export_automation_to_midi":
             filename = arguments["filename"]
