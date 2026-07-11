@@ -5,7 +5,8 @@
       "Bash(python3:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(git push)"
+      "Bash(git push)",
+      "Bash(timeout 2 ./venv/bin/python:*)"
     ],
     "deny": [],
     "ask": []
