@@ -2,6 +2,24 @@
 
 An MCP (Model Context Protocol) server for controlling the Elektron Digitakt II via MIDI.
 
+## Quick setup / update (any Mac)
+
+This server is installed and registered for Claude Code and Claude Desktop by
+[`setup-mcp.sh`](https://github.com/feamster/dotfiles/blob/main/setup-mcp.sh) in the dotfiles repo,
+along with all the other MCP servers:
+
+```bash
+cd ~/src/dotfiles && git pull && ./setup-mcp.sh
+```
+
+Then restart Claude Code and Claude Desktop. The script clones or pulls every server repo into
+`~/src`, builds each environment from its `uv.lock`, writes the config, and checks that each server
+starts. It's safe to re-run anytime.
+
+After that, a plain `git pull` in this repo is enough: the server launches with `uv run --frozen`,
+which installs any changed dependencies on the next start. Credentials live in `~/.mcp-auth`
+(synced from Box with `unison mcp_auth`).
+
 ## Project Structure
 
 ```

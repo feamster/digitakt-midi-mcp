@@ -8,7 +8,7 @@ import asyncio
 import mido
 from typing import Optional
 from mcp.server import Server
-from mcp.types import Tool, TextContent, Resource
+from mcp.types import CallToolResult, ListToolsResult, ListResourcesResult, ReadResourceResult, TextResourceContents, Tool, TextContent, Resource
 import mcp.server.stdio
 import logging
 import json
@@ -39,9 +39,6 @@ PRESET_DIR.mkdir(parents=True, exist_ok=True)
 # Pattern directory (for full patterns)
 PATTERN_DIR = Path.home() / ".mcp-config" / "digitakt" / "patterns"
 PATTERN_DIR.mkdir(parents=True, exist_ok=True)
-
-# Create server instance
-server = Server("digitakt-midi-server")
 
 # Global MIDI port references
 output_port: Optional[mido.ports.BaseOutput] = None
@@ -102,7 +99,6 @@ def send_parameter_change(param_name: str, value: int, channel: int = 0):
         output_port.send(mido.Message('control_change', control=6, value=value, channel=channel))
         output_port.send(mido.Message('control_change', control=38, value=0, channel=channel))
 
-@server.list_tools()
 async def list_tools() -> list[Tool]:
     """List available MIDI control tools"""
     return [
@@ -1558,7 +1554,6 @@ async def _delayed_note_off(note: int, duration: float, channel: int = 0):
     if output_port:
         output_port.send(mido.Message('note_off', note=note, velocity=0, channel=channel))
 
-@server.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     """Execute a MIDI tool"""
     if not output_port:
@@ -3888,7 +3883,6 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             text=f"Error: {str(e)}"
         )]
 
-@server.list_resources()
 async def list_resources() -> list[Resource]:
     """List available resources"""
     return [
@@ -3906,7 +3900,6 @@ async def list_resources() -> list[Resource]:
         )
     ]
 
-@server.read_resource()
 async def read_resource(uri: str) -> str:
     """Read a resource"""
     if uri == "midi://ports":
@@ -3931,6 +3924,33 @@ async def read_resource(uri: str) -> str:
         return "\n".join(status)
 
     return f"Unknown resource: {uri}"
+
+# MCP SDK 2.x passes request handlers to the Server constructor instead of
+# registering them with decorators; these adapt the handlers above.
+async def _on_list_tools(ctx, params) -> ListToolsResult:
+    return ListToolsResult(tools=await list_tools())
+
+
+async def _on_call_tool(ctx, params) -> CallToolResult:
+    return CallToolResult(content=list(await call_tool(params.name, params.arguments or {})))
+
+
+async def _on_list_resources(ctx, params) -> ListResourcesResult:
+    return ListResourcesResult(resources=await list_resources())
+
+
+async def _on_read_resource(ctx, params) -> ReadResourceResult:
+    uri = str(params.uri)
+    mime = next((r.mime_type for r in await list_resources() if str(r.uri) == uri), "text/plain")
+    return ReadResourceResult(contents=[TextResourceContents(uri=uri, mimeType=mime, text=await read_resource(uri))])
+
+
+server = Server(
+    "digitakt-midi-server",
+    on_list_tools=_on_list_tools, on_call_tool=_on_call_tool,
+    on_list_resources=_on_list_resources, on_read_resource=_on_read_resource,
+)
+
 
 async def main():
     """Main entry point"""

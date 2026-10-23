@@ -6,7 +6,7 @@ authors = [{name = "Your Name"}]
 dependencies = [
     "mido>=1.3.0",
     "python-rtmidi>=1.5.0",
-    "mcp>=0.9.0"
+    "mcp>=2.3,<3"
 ]
 requires-python = ">=3.10"
 
@@ -15,4 +15,8 @@ digitakt-midi-server = "server:main"
 
 [build-system]
 requires = ["setuptools>=61.0"]
-build-backend = "setuptools.build_backend"
+build-backend = "setuptools.build_meta"
+
+[tool.uv]
+# Run in place with `uv run`; dependencies only, no package build
+package = false
